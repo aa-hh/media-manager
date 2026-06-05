@@ -570,6 +570,29 @@ async def setup_save(request: Request):
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/settings/services")
+async def settings_get_services():
+    """Return current service configuration from config/.env."""
+    cfg = _read_config_env()
+    return JSONResponse({
+        "SONARR_URL":          cfg.get("SONARR_URL", ""),
+        "SONARR_API_KEY":      cfg.get("SONARR_API_KEY", ""),
+        "RADARR_URL":          cfg.get("RADARR_URL", ""),
+        "RADARR_API_KEY":      cfg.get("RADARR_API_KEY", ""),
+        "SEERR_URL":           cfg.get("SEERR_URL", ""),
+        "SEERR_API_KEY":       cfg.get("SEERR_API_KEY", ""),
+        "PLEX_URL":            cfg.get("PLEX_URL", ""),
+        "PLEX_TOKEN":          cfg.get("PLEX_TOKEN", ""),
+        "PLEX_TV_SECTIONS":    cfg.get("PLEX_TV_SECTIONS", ""),
+        "PLEX_MOVIE_SECTIONS": cfg.get("PLEX_MOVIE_SECTIONS", ""),
+        "TAUTULLI_URL":        cfg.get("TAUTULLI_URL", ""),
+        "TAUTULLI_API_KEY":    cfg.get("TAUTULLI_API_KEY", ""),
+        "TMDB_API_KEY":        cfg.get("TMDB_API_KEY", ""),
+        "STORAGE_CAPACITY_GB": cfg.get("STORAGE_CAPACITY_GB", ""),
+        "VERIFY_SSL":          cfg.get("VERIFY_SSL", "true"),
+    })
+
+
 @app.post("/api/settings/config")
 async def settings_save_config(request: Request):
     body = await request.json()
@@ -577,7 +600,7 @@ async def settings_save_config(request: Request):
         "SONARR_URL", "SONARR_API_KEY", "RADARR_URL", "RADARR_API_KEY",
         "SEERR_URL", "SEERR_API_KEY", "PLEX_URL", "PLEX_TOKEN",
         "TAUTULLI_URL", "TAUTULLI_API_KEY", "TMDB_API_KEY",
-        "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB",
+        "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB", "VERIFY_SSL",
     }
     config_values = {k: v for k, v in body.items() if k in allowed_keys}
     try:
