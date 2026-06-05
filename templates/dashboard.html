@@ -408,7 +408,7 @@
             <th style="text-align:right">Plays</th>
             <th>Direct Play</th>
             <th>Transcoded</th>
-            <th>Typically transcodes to</th>
+            <th>Transcoded to (% of transcode sessions)</th>
           </tr>
         </thead>
         <tbody>
@@ -443,8 +443,15 @@
                 <span style="color:var(--text-muted);font-size:.8rem">—</span>
               {% endif %}
             </td>
-            <td style="color:var(--text-muted);font-size:.82rem">
-              {{ row.top_transcode_quality or "—" }}
+            <td style="font-size:.8rem">
+              {% if row.quality_dist %}
+                {% for q in row.quality_dist %}
+                  <span style="color:var(--text-muted)">{{ q.quality }}</span>
+                  <span style="color:var(--text);font-weight:600;margin-right:10px">{{ q.pct }}%</span>
+                {% endfor %}
+              {% else %}
+                <span style="color:var(--text-muted)">—</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

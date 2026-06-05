@@ -294,17 +294,23 @@ def _compute_format_metrics(shows: list, movies: list) -> list:
     result = []
     for fmt, g in sorted(groups.items(), key=lambda x: -x[1]["items"]):
         total = g["total_plays"]
-        top_transcode_quality = None
-        if g["transcode_qualities"]:
-            top_transcode_quality = max(g["transcode_qualities"], key=g["transcode_qualities"].get)
+        transcode_total = sum(g["transcode_qualities"].values())
+        quality_dist = []
+        if transcode_total:
+            for qp, cnt in sorted(g["transcode_qualities"].items(),
+                                   key=lambda x: -x[1]):
+                quality_dist.append({
+                    "quality": qp,
+                    "pct": round(cnt / transcode_total * 100),
+                })
         result.append({
-            "format":       fmt,
-            "items":        g["items"],
-            "total_plays":  total,
-            "direct_pct":   round(g["direct"]    / total * 100) if total else None,
-            "transcode_pct":round(g["transcode"] / total * 100) if total else None,
-            "copy_pct":     round(g["copy"]      / total * 100) if total else None,
-            "top_transcode_quality": top_transcode_quality,
+            "format":          fmt,
+            "items":           g["items"],
+            "total_plays":     total,
+            "direct_pct":      round(g["direct"]    / total * 100) if total else None,
+            "transcode_pct":   round(g["transcode"] / total * 100) if total else None,
+            "copy_pct":        round(g["copy"]      / total * 100) if total else None,
+            "quality_dist":    quality_dist,
         })
     return result
 
