@@ -260,6 +260,13 @@
     .job-running td { opacity: .6; }
     .btn--run { background: var(--accent); color: #fff; font-size: .8rem; padding: 5px 12px; }
     .job-desc { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+    /* ── Schedule ── */
+    .cron-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .preset-btn { padding: 5px 12px; border-radius: 6px; font-size: .8rem; font-weight: 500; cursor: pointer; background: var(--bg3); border: 1px solid var(--border); color: var(--text-muted); transition: all .15s; }
+    .preset-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .preset-btn.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); color: var(--accent); }
+    .cron-input-row { display: flex; gap: 10px; align-items: flex-end; }
+    .cron-next { font-size: .8rem; color: var(--text-muted); margin-top: 8px; min-height: 1.2em; }
   </style>
 </head>
 <body>
@@ -350,7 +357,7 @@
           <div class="settings-section__header">
             <div>
               <div class="settings-section__title">Pipeline Jobs</div>
-              <div class="settings-section__subtitle">Manually trigger data collection or dashboard generation.</div>
+              <div class="settings-section__subtitle">Manually trigger individual steps or the full pipeline.</div>
             </div>
             <button class="btn btn--ghost btn--sm" onclick="loadJobs()">
               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -369,6 +376,34 @@
               <tr><td colspan="3" class="empty-row">Loading…</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- ── Schedule ── -->
+        <div class="settings-section">
+          <div class="settings-section__header">
+            <div>
+              <div class="settings-section__title">Automatic Schedule</div>
+              <div class="settings-section__subtitle">Run the full pipeline on a cron schedule inside the container.</div>
+            </div>
+          </div>
+          <div class="settings-section__body">
+            <div class="cron-presets" id="cron-presets">
+              <button class="preset-btn" data-cron="" onclick="selectPreset(this)">Off</button>
+              <button class="preset-btn" data-cron="0 * * * *" onclick="selectPreset(this)">Hourly</button>
+              <button class="preset-btn" data-cron="0 */3 * * *" onclick="selectPreset(this)">Every 3h</button>
+              <button class="preset-btn" data-cron="0 */6 * * *" onclick="selectPreset(this)">Every 6h</button>
+              <button class="preset-btn" data-cron="0 */12 * * *" onclick="selectPreset(this)">Every 12h</button>
+              <button class="preset-btn" data-cron="0 3 * * *" onclick="selectPreset(this)">Daily 3am</button>
+            </div>
+            <div class="cron-input-row">
+              <div class="form-group form-group--grow">
+                <label class="form-label">Cron expression (UTC)</label>
+                <input class="form-input" id="cron-input" placeholder="e.g. 0 */6 * * *" oninput="onCronInput()">
+              </div>
+              <button class="btn btn--primary" onclick="saveSchedule()">Save</button>
+            </div>
+            <div class="cron-next" id="cron-next"></div>
+          </div>
         </div>
       </div>
       <footer style="padding:32px"><span>Media Manager</span></footer>
@@ -462,7 +497,7 @@ function switchTab(name) {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.classList.toggle('active', t === name);
   });
-  if (name === 'jobs') loadJobs();
+  if (name === 'jobs') { loadJobs(); loadSchedule(); }
 }
 
 // ── Services tab ─────────────────────────────────────────────────────────────
@@ -989,7 +1024,7 @@ async function loadJobs() {
           <div style="font-weight:600;font-size:.875rem">${esc(job.name)}</div>
           <div class="job-desc">${esc(job.description)}</div>
         </td>
-        <td>${job.running ? '<span class="spinner"></span> Running…' : lastRun}</td>
+        <td style="color:var(--text-muted);font-size:.85rem">${job.running ? '<span class="spinner"></span> Running…' : lastRun}</td>
         <td style="text-align:right">
           <button class="btn btn--run" ${job.running ? 'disabled' : ''} onclick="runJob('${esc(job.id)}', this)">
             <svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg>
@@ -1021,6 +1056,76 @@ async function runJob(jobId, btn) {
     toast('Request failed.', 'err');
     btn.disabled = false;
     btn.innerHTML = '<svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg> Run Now';
+  }
+}
+
+// ── Schedule ──────────────────────────────────────────────────────────────────
+const PRESETS = ['', '0 * * * *', '0 */3 * * *', '0 */6 * * *', '0 */12 * * *', '0 3 * * *'];
+
+async function loadSchedule() {
+  try {
+    const r = await fetch('/api/settings/schedule');
+    const data = await r.json();
+    const cron = data.cron || '';
+    document.getElementById('cron-input').value = cron;
+    _syncPresetButtons(cron);
+    _updateNextRun(data.nextRun);
+  } catch {
+    // non-fatal
+  }
+}
+
+function selectPreset(btn) {
+  const cron = btn.dataset.cron;
+  document.getElementById('cron-input').value = cron;
+  _syncPresetButtons(cron);
+  _updateNextRunFromInput(cron);
+}
+
+function onCronInput() {
+  const cron = document.getElementById('cron-input').value.trim();
+  _syncPresetButtons(cron);
+  _updateNextRunFromInput(cron);
+}
+
+function _syncPresetButtons(cron) {
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.cron === cron);
+  });
+}
+
+function _updateNextRun(isoStr) {
+  const el = document.getElementById('cron-next');
+  if (!isoStr) { el.textContent = ''; return; }
+  const diff = Math.round((new Date(isoStr) - Date.now()) / 1000);
+  if (diff <= 0) { el.textContent = 'Next run: now'; return; }
+  if (diff < 3600) el.textContent = `Next run: in ${Math.round(diff / 60)}m`;
+  else if (diff < 86400) el.textContent = `Next run: in ${Math.round(diff / 3600)}h ${Math.round((diff % 3600) / 60)}m`;
+  else el.textContent = `Next run: in ${Math.round(diff / 86400)}d`;
+}
+
+function _updateNextRunFromInput(cron) {
+  // Optimistic display — just clear; server response will update after save
+  document.getElementById('cron-next').textContent = cron ? '' : '';
+}
+
+async function saveSchedule() {
+  const cron = document.getElementById('cron-input').value.trim();
+  try {
+    const r = await fetch('/api/settings/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cron }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      toast(cron ? `Scheduled: ${cron}` : 'Schedule disabled.', 'ok');
+      loadSchedule();
+    } else {
+      toast(data.error || 'Failed to save schedule.', 'err');
+    }
+  } catch {
+    toast('Request failed.', 'err');
   }
 }
 

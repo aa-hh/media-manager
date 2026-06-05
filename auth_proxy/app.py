@@ -1,15 +1,17 @@
 import asyncio
 import os
-import re
 import subprocess
 import json
 from pathlib import Path
 from secrets import compare_digest
+from datetime import timezone
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi import HTTPException
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 app = FastAPI()
 
@@ -28,12 +30,21 @@ PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/app/project"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
 
 PIPELINE_JOBS = [
-    {"id": "collect",  "name": "Collect",          "description": "Fetch data from all configured services"},
-    {"id": "generate", "name": "Generate",          "description": "Regenerate dashboard HTML from cached data"},
-    {"id": "all",      "name": "Collect + Generate","description": "Full pipeline: collect then generate"},
+    {"id": "sonarr",    "name": "Sonarr",           "description": "Fetch TV library from Sonarr"},
+    {"id": "radarr",    "name": "Radarr",            "description": "Fetch movie library from Radarr"},
+    {"id": "overseerr", "name": "Overseerr",         "description": "Fetch requests & watchlists from Overseerr"},
+    {"id": "plex",      "name": "Plex",              "description": "Fetch watch history from Plex"},
+    {"id": "tautulli",  "name": "Tautulli",          "description": "Fetch watch data from Tautulli"},
+    {"id": "tmdb",      "name": "TMDB",              "description": "Fetch metadata & artwork from TMDB"},
+    {"id": "services",  "name": "Services",          "description": "Check health & version of all services"},
+    {"id": "build",     "name": "Build",             "description": "Rebuild data files from cached raw data"},
+    {"id": "generate",  "name": "Generate",          "description": "Regenerate dashboard HTML"},
+    {"id": "collect",   "name": "Collect All",       "description": "Run all collectors then build"},
+    {"id": "all",       "name": "Full Pipeline",     "description": "Collect all + build + generate"},
 ]
 _running_jobs: dict[str, bool] = {}
 _jobs_lock = asyncio.Lock()
+_scheduler = AsyncIOScheduler(timezone=timezone.utc)
 SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
 SEERR_KEY = os.environ.get("SEERR_API_KEY") or os.environ.get("HOMEPAGE_VAR_SEERR_API_KEY", "")
 def _is_setup_complete() -> bool:
@@ -49,9 +60,47 @@ signer = URLSafeTimedSerializer(SECRET_KEY)
 server_machine_id: str | None = None
 
 
+def _schedule_pipeline(cron_expr: str) -> None:
+    """Replace the scheduled pipeline job with a new cron expression."""
+    _scheduler.remove_all_jobs()
+    try:
+        trigger = CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
+        _scheduler.add_job(_run_pipeline_scheduled, trigger, id="pipeline", replace_existing=True)
+        print(f"Scheduled pipeline: {cron_expr}")
+    except Exception as e:
+        print(f"Warning: invalid cron expression {cron_expr!r}: {e}")
+
+
+async def _run_pipeline_scheduled() -> None:
+    """Run the full pipeline (all) as the scheduled job."""
+    async with _jobs_lock:
+        if _running_jobs.get("all"):
+            return
+        _running_jobs["all"] = True
+    try:
+        script = PROJECT_DIR / "scripts" / "run.py"
+        proc = await asyncio.create_subprocess_exec(
+            "python", str(script), "all",
+            cwd=str(PROJECT_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        await proc.communicate()
+    finally:
+        async with _jobs_lock:
+            _running_jobs["all"] = False
+
+
 @app.on_event("startup")
 async def startup():
     global server_machine_id
+
+    # Start the APScheduler
+    _scheduler.start()
+    cron_expr = _read_config_env().get("CRON_SCHEDULE", "").strip()
+    if cron_expr:
+        _schedule_pipeline(cron_expr)
+
     if not PLEX_SERVER_URL or not PLEX_TOKEN:
         print("Info: PLEX_URL/PLEX_TOKEN not configured — Plex server identity check skipped")
         return
@@ -613,42 +662,15 @@ async def settings_get_services():
     })
 
 
-def _last_run_time(job_id: str) -> str | None:
-    """Parse media_manager.log for the last completed run of a job."""
-    log_path = PROJECT_DIR / "logs" / "media_manager.log"
-    if not log_path.exists():
-        return None
-    collect_marker = "=== Collect phase started ==="
-    generate_marker = "=== Generate phase started ==="
-    done_marker = "Done in"
-    ts_pattern = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]")
-
-    lines = log_path.read_text(errors="replace").splitlines()
-    last_started_ts: str | None = None
-    last_done_ts: str | None = None
-
-    for line in lines:
-        m = ts_pattern.match(line)
-        if not m:
-            continue
-        ts = m.group(1)
-        if job_id == "all":
-            if collect_marker in line:
-                last_started_ts = ts
-            if done_marker in line and last_started_ts:
-                last_done_ts = ts
-        elif job_id == "collect":
-            if collect_marker in line:
-                last_started_ts = ts
-            if "=== Collect phase complete ===" in line:
-                last_done_ts = ts
-        elif job_id == "generate":
-            if generate_marker in line:
-                last_started_ts = ts
-            if "=== Generate phase complete ===" in line:
-                last_done_ts = ts
-
-    return last_done_ts
+def _load_job_runs() -> dict:
+    """Read data/job_runs.json written by run.py after each job."""
+    path = DATA_DIR / "job_runs.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
 
 
 @app.get("/api/settings/jobs")
@@ -656,13 +678,14 @@ async def settings_get_jobs():
     """List pipeline jobs with running state and last-run time."""
     async with _jobs_lock:
         running_snapshot = dict(_running_jobs)
+    job_runs = _load_job_runs()
     jobs = []
     for j in PIPELINE_JOBS:
         jid = j["id"]
         jobs.append({
             **j,
             "running": running_snapshot.get(jid, False),
-            "lastRun": _last_run_time(jid),
+            "lastRun": job_runs.get(jid),
         })
     return JSONResponse(jobs)
 
@@ -692,6 +715,41 @@ async def settings_run_job(job_id: str):
                 _running_jobs[job_id] = False
 
     asyncio.create_task(_run())
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/settings/schedule")
+async def settings_get_schedule():
+    """Return the current pipeline cron schedule."""
+    cron_expr = _read_config_env().get("CRON_SCHEDULE", "").strip()
+    next_run: str | None = None
+    if cron_expr:
+        job = _scheduler.get_job("pipeline")
+        if job and job.next_run_time:
+            next_run = job.next_run_time.isoformat()
+    return JSONResponse({
+        "cron": cron_expr,
+        "nextRun": next_run,
+    })
+
+
+@app.post("/api/settings/schedule")
+async def settings_save_schedule(request: Request):
+    """Update the pipeline cron schedule."""
+    body = await request.json()
+    cron_expr = body.get("cron", "").strip()
+    if cron_expr:
+        try:
+            CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
+        except Exception as e:
+            return JSONResponse({"error": f"Invalid cron expression: {e}"}, status_code=400)
+    cfg = _read_config_env()
+    cfg["CRON_SCHEDULE"] = cron_expr
+    _write_config_env(cfg)
+    if cron_expr:
+        _schedule_pipeline(cron_expr)
+    else:
+        _scheduler.remove_all_jobs()
     return JSONResponse({"ok": True})
 
 
