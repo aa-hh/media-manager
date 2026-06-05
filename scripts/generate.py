@@ -245,6 +245,70 @@ def _build_sparkline_points(snapshots):
     return " ".join(points)
 
 
+def _compute_format_metrics(shows: list, movies: list) -> list:
+    """
+    Group items by source file format (codec + resolution for movies,
+    quality profile for TV) and aggregate transcode stats across each group.
+    Returns list sorted by item count desc.
+    """
+    from collections import defaultdict
+
+    groups: dict = defaultdict(lambda: {
+        "items": 0, "total_plays": 0,
+        "direct": 0, "transcode": 0, "copy": 0,
+        "transcode_qualities": {},
+    })
+
+    for item in movies:
+        fi = item.get("file_info") or {}
+        codec = fi.get("video_codec") or ""
+        res   = fi.get("resolution") or ""
+        hdr   = " HDR" if fi.get("hdr") else ""
+        if codec or res:
+            key = f"{codec} {res}{hdr}".strip()
+        else:
+            key = "Unknown"
+
+        g = groups[key]
+        g["items"] += 1
+        ts = item.get("transcode_stats") or {}
+        g["total_plays"] += ts.get("total", 0)
+        g["direct"]      += ts.get("direct", 0)
+        g["transcode"]   += ts.get("transcode", 0)
+        g["copy"]        += ts.get("copy", 0)
+        for qp, cnt in (ts.get("transcode_qualities") or {}).items():
+            g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + cnt
+
+    for item in shows:
+        key = item.get("quality_profile_name") or "Unknown"
+        g = groups[key]
+        g["items"] += 1
+        ts = item.get("transcode_stats") or {}
+        g["total_plays"] += ts.get("total", 0)
+        g["direct"]      += ts.get("direct", 0)
+        g["transcode"]   += ts.get("transcode", 0)
+        g["copy"]        += ts.get("copy", 0)
+        for qp, cnt in (ts.get("transcode_qualities") or {}).items():
+            g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + cnt
+
+    result = []
+    for fmt, g in sorted(groups.items(), key=lambda x: -x[1]["items"]):
+        total = g["total_plays"]
+        top_transcode_quality = None
+        if g["transcode_qualities"]:
+            top_transcode_quality = max(g["transcode_qualities"], key=g["transcode_qualities"].get)
+        result.append({
+            "format":       fmt,
+            "items":        g["items"],
+            "total_plays":  total,
+            "direct_pct":   round(g["direct"]    / total * 100) if total else None,
+            "transcode_pct":round(g["transcode"] / total * 100) if total else None,
+            "copy_pct":     round(g["copy"]      / total * 100) if total else None,
+            "top_transcode_quality": top_transcode_quality,
+        })
+    return result
+
+
 def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None):
     all_items = shows + movies
     total_tv_gb = sum(s["size_gb"] for s in shows)
@@ -327,6 +391,7 @@ def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None)
         "shows": shows,
         "movies": movies,
         "users": users,
+        "format_metrics": _compute_format_metrics(shows, movies),
     }
 
 

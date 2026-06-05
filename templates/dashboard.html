@@ -392,6 +392,68 @@
     </div>
   </div>
 
+  {# ── Format Performance ── #}
+  {% if format_metrics %}
+  <div class="section">
+    <div class="section-title">Format Performance</div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">
+      How often each file format plays directly vs. triggers a transcode. Populated by Tautulli — accumulates over time.
+    </p>
+    <div class="table-card" style="overflow:auto">
+      <table class="data-table" style="min-width:560px">
+        <thead>
+          <tr>
+            <th>Format</th>
+            <th style="text-align:right">Items</th>
+            <th style="text-align:right">Plays</th>
+            <th>Direct Play</th>
+            <th>Transcoded</th>
+            <th>Typically transcodes to</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in format_metrics %}
+          <tr>
+            <td>
+              {% set fmt_tags = file_format_tags({"file_info": {"video_codec": row.format.split(" ")[0] if " " in row.format else row.format, "resolution": row.format.split(" ")[1] if row.format.split(" ") | length > 1 else "", "hdr": "HDR" in row.format}, "quality_profile_name": row.format}) %}
+              {% for label, cls in fmt_tags %}
+                <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
+              {% else %}
+                <span style="font-size:.875rem">{{ row.format }}</span>
+              {% endfor %}
+            </td>
+            <td style="text-align:right;color:var(--text-muted)">{{ row.items }}</td>
+            <td style="text-align:right;color:var(--text-muted)">{{ row.total_plays or "—" }}</td>
+            <td>
+              {% if row.direct_pct is not none %}
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
+                    <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
+                  </div>
+                  <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
+                </div>
+              {% else %}
+                <span style="color:var(--text-muted);font-size:.8rem">No data yet</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.transcode_pct is not none %}
+                <span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span>
+              {% else %}
+                <span style="color:var(--text-muted);font-size:.8rem">—</span>
+              {% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:.82rem">
+              {{ row.top_transcode_quality or "—" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 {% endblock %}
 

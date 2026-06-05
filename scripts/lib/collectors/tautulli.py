@@ -68,6 +68,7 @@ def _process_history(history: list[dict], media_type: str, fname: str, store: di
                 "direct_plays": 0,
                 "transcode_plays": 0,
                 "copy_plays": 0,
+                "transcode_qualities": {},  # {quality_profile: count}
                 "total_watch_pct": 0.0,
                 "watch_pct_count": 0,
             }
@@ -88,6 +89,10 @@ def _process_history(history: list[dict], media_type: str, fname: str, store: di
             rec["direct_plays"] += 1
         elif decision == "transcode":
             rec["transcode_plays"] += 1
+            # Record what quality it was transcoded to (client stream quality)
+            qp = entry.get("quality_profile") or ""
+            if qp:
+                rec["transcode_qualities"][qp] = rec["transcode_qualities"].get(qp, 0) + 1
         elif decision == "copy":
             rec["copy_plays"] += 1
 
@@ -161,11 +166,16 @@ def _process_history(history: list[dict], media_type: str, fname: str, store: di
         # Aggregate transcode stats across all users for this item
         total = rec["plays"]
         existing = transcode_store.get(tid, {})
+        merged_qualities = dict(existing.get("transcode_qualities", {}))
+        for qp, cnt in rec["transcode_qualities"].items():
+            merged_qualities[qp] = merged_qualities.get(qp, 0) + cnt
+
         transcode_store[tid] = {
-            "direct":    existing.get("direct", 0)    + rec["direct_plays"],
-            "transcode": existing.get("transcode", 0) + rec["transcode_plays"],
-            "copy":      existing.get("copy", 0)      + rec["copy_plays"],
-            "total":     existing.get("total", 0)     + total,
+            "direct":              existing.get("direct", 0)    + rec["direct_plays"],
+            "transcode":           existing.get("transcode", 0) + rec["transcode_plays"],
+            "copy":                existing.get("copy", 0)      + rec["copy_plays"],
+            "transcode_qualities": merged_qualities,
+            "total":               existing.get("total", 0)     + total,
             "avg_watch_pct": (
                 round((existing.get("_wsum", 0.0) + rec["total_watch_pct"]) /
                       (existing.get("_wcnt", 0)   + rec["watch_pct_count"]), 2)
