@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import urljoin
 from .. import log
+from ..config import verify_ssl
 
 
 def _get_all_requests(url: str, api_key: str) -> list[dict]:
@@ -11,7 +12,7 @@ def _get_all_requests(url: str, api_key: str) -> list[dict]:
     all_results = []
     while True:
         endpoint = urljoin(base, f"api/v1/request?take={page_size}&skip={skip}&sort=added")
-        resp = requests.get(endpoint, headers=headers, timeout=30)
+        resp = requests.get(endpoint, headers=headers, timeout=30, verify=verify_ssl())
         resp.raise_for_status()
         data = resp.json()
         results = data.get("results", [])
@@ -27,7 +28,7 @@ def _get_all_requests(url: str, api_key: str) -> list[dict]:
 def _get_users(url: str, api_key: str) -> dict[int, dict]:
     headers = {"X-Api-Key": api_key}
     endpoint = urljoin(url.rstrip("/") + "/", "api/v1/user?take=100&skip=0")
-    resp = requests.get(endpoint, headers=headers, timeout=30)
+    resp = requests.get(endpoint, headers=headers, timeout=30, verify=verify_ssl())
     resp.raise_for_status()
     data = resp.json()
     users = {}
@@ -93,7 +94,7 @@ def fetch_watchlist(url: str, api_key: str, users: dict[int, dict]) -> set[tuple
         while True:
             endpoint = urljoin(base, f"api/v1/user/{user_id}/watchlist?page={page}")
             try:
-                resp = requests.get(endpoint, headers=headers, timeout=30)
+                resp = requests.get(endpoint, headers=headers, timeout=30, verify=verify_ssl())
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:

@@ -1,12 +1,13 @@
 import requests
 from urllib.parse import urljoin
 from .. import log
+from ..config import verify_ssl
 
 
 def fetch(url: str, api_key: str) -> list[dict]:
     headers = {"X-Api-Key": api_key}
     endpoint = urljoin(url.rstrip("/") + "/", "api/v3/movie")
-    resp = requests.get(endpoint, headers=headers, timeout=60)
+    resp = requests.get(endpoint, headers=headers, timeout=60, verify=verify_ssl())
     resp.raise_for_status()
     movie_list = resp.json()
     log.info(f"Radarr: fetched {len(movie_list)} movies")

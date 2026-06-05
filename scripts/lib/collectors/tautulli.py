@@ -5,12 +5,13 @@ Returns a dict: { tmdb_id: { username: WatchStats } }
 """
 import requests
 from .. import log
+from ..config import verify_ssl
 
 
 def _api(url: str, api_key: str, cmd: str, **params) -> dict:
     base_params = {"apikey": api_key, "cmd": cmd}
     base_params.update(params)
-    resp = requests.get(f"{url}/api/v2", params=base_params, timeout=30)
+    resp = requests.get(f"{url}/api/v2", params=base_params, timeout=30, verify=verify_ssl())
     resp.raise_for_status()
     data = resp.json()
     return data.get("response", {})

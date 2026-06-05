@@ -12,6 +12,7 @@ import requests
 from xml.etree import ElementTree as ET
 from datetime import datetime
 from .. import log
+from ..config import verify_ssl
 
 PAGE_SIZE = 1000
 
@@ -20,7 +21,11 @@ def _get(url: str, token: str, path: str, params: dict | None = None) -> ET.Elem
     p = {"X-Plex-Token": token}
     if params:
         p.update(params)
-    resp = requests.get(f"{url}{path}", params=p, timeout=60, verify=False)
+    ssl_verify = verify_ssl()
+    if not ssl_verify:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    resp = requests.get(f"{url}{path}", params=p, timeout=60, verify=ssl_verify)
     resp.raise_for_status()
     return ET.fromstring(resp.content)
 
@@ -133,9 +138,6 @@ def fetch(
     tv_section_ids: list[str] | None = None,
     movie_section_ids: list[str] | None = None,
 ) -> dict:
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
     if tv_section_ids is None:
         tv_section_ids = ["1"]
     if movie_section_ids is None:

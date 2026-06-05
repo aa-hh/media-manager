@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+from secrets import compare_digest
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, FileResponse
@@ -77,8 +78,13 @@ async def auth_middleware(request: Request, call_next):
         except (BadSignature, SignatureExpired):
             pass
 
-    if not authed and API_KEY and path.startswith("/api/"):
-        if request.query_params.get("api_key") == API_KEY:
+    if not authed and API_KEY:
+        provided = request.query_params.get("api_key", "")
+        if not provided:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                provided = auth_header[7:]
+        if provided and compare_digest(provided, API_KEY):
             authed = True
 
     if not authed:
@@ -285,6 +291,7 @@ async def validate(request: Request):
         max_age=SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
+        secure=True,
     )
     return response
 
@@ -391,6 +398,11 @@ async def settings_save_users(request: Request):
     body = await request.json()
     if not isinstance(body, list):
         return JSONResponse({"detail": "Expected a JSON array."}, status_code=400)
+    if len(body) > 500:
+        return JSONResponse({"detail": "Too many users."}, status_code=400)
+    for item in body:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "Each entry must be an object."}, status_code=400)
     _write_user_mappings(body)
     return JSONResponse({"ok": True})
 
@@ -399,6 +411,8 @@ async def settings_save_users(request: Request):
 
 @app.get("/setup")
 async def setup_page():
+    if _is_setup_complete():
+        return RedirectResponse("/", status_code=302)
     html_path = Path(__file__).parent / "setup.html"
     if not html_path.exists():
         return HTMLResponse("<h1>Setup page not found</h1>", status_code=500)
@@ -418,12 +432,15 @@ def _read_config_env() -> dict:
 
 
 def _write_config_env(values: dict) -> None:
+    url_keys = {"SONARR_URL", "RADARR_URL", "SEERR_URL", "PLEX_URL", "TAUTULLI_URL"}
+    for k in url_keys:
+        if k in values and values[k]:
+            if not values[k].startswith(("http://", "https://")):
+                raise ValueError(f"{k} must start with http:// or https://")
     CONFIG_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     existing = _read_config_env()
     existing.update(values)
-    lines = []
-    for k, v in existing.items():
-        lines.append(f"{k}={v}")
+    lines = [f"{k}={v}" for k, v in existing.items()]
     CONFIG_ENV_PATH.write_text("\n".join(lines) + "\n")
 
 
@@ -466,12 +483,14 @@ async def setup_test_service(request: Request):
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=200)
+        print(f"Service test error: {e}")
+        return JSONResponse({"ok": False, "error": "Connection failed — check the URL and API key."}, status_code=200)
 
 
-@app.get("/api/setup/plex-servers")
+@app.post("/api/setup/plex-servers")
 async def setup_plex_servers(request: Request):
-    token = request.query_params.get("token", "")
+    body = await request.json()
+    token = body.get("token", "")
     if not token:
         return JSONResponse({"error": "token required"}, status_code=400)
     try:
@@ -505,10 +524,11 @@ async def setup_plex_servers(request: Request):
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
-@app.get("/api/setup/plex-libraries")
+@app.post("/api/setup/plex-libraries")
 async def setup_plex_libraries(request: Request):
-    url = request.query_params.get("url", "").rstrip("/")
-    token = request.query_params.get("token", "")
+    body = await request.json()
+    url = body.get("url", "").rstrip("/")
+    token = body.get("token", "")
     if not url or not token:
         return JSONResponse({"error": "url and token required"}, status_code=400)
     try:
@@ -527,6 +547,8 @@ async def setup_plex_libraries(request: Request):
 
 @app.post("/api/setup/save")
 async def setup_save(request: Request):
+    if _is_setup_complete():
+        return JSONResponse({"detail": "Setup already complete."}, status_code=403)
     body = await request.json()
     sonarr_url = body.get("SONARR_URL", "").strip()
     radarr_url = body.get("RADARR_URL", "").strip()
@@ -541,7 +563,10 @@ async def setup_save(request: Request):
     }
     config_values = {k: v for k, v in body.items() if k in allowed_keys and v}
     config_values["SETUP_COMPLETE"] = "true"
-    _write_config_env(config_values)
+    try:
+        _write_config_env(config_values)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"ok": True})
 
 
@@ -555,19 +580,34 @@ async def settings_save_config(request: Request):
         "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB",
     }
     config_values = {k: v for k, v in body.items() if k in allowed_keys}
-    _write_config_env(config_values)
+    try:
+        _write_config_env(config_values)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"ok": True})
 
 
 # ── Static file serving (catch-all — must be last) ───────────────────────────
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 @app.get("/{path:path}")
 async def serve_static(path: str):
-    target = PUBLIC_DIR / path
-    if target.is_dir():
-        target = target / "index.html"
     if not path:
         target = PUBLIC_DIR / "index.html"
+    else:
+        target = (PUBLIC_DIR / path).resolve()
+        if not str(target).startswith(str(PUBLIC_DIR.resolve())):
+            raise HTTPException(status_code=404)
+    if target.is_dir():
+        target = target / "index.html"
     if not target.exists():
         raise HTTPException(status_code=404)
     return FileResponse(target)

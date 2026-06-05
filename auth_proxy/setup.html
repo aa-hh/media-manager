@@ -395,7 +395,11 @@ function onPlexTokenReceived(token) {
   state.plexToken = token;
   document.getElementById('plexStatus').textContent = 'Fetching your Plex servers…';
 
-  fetch('/api/setup/plex-servers?token=' + encodeURIComponent(token))
+  fetch('/api/setup/plex-servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
   .then(r => r.json())
   .then(data => {
     if (data.error || !data.servers?.length) {
@@ -697,8 +701,13 @@ async function testPlexAndLoadLibraries(btn, resultEl) {
     resultEl.textContent = (data.version || '✓') + ' ✓';
 
     // Load libraries
-    const lr = await fetch(`/api/setup/plex-libraries?url=${encodeURIComponent(state.plexUrl)}&token=${encodeURIComponent(state.plexToken)}`);
-    const ld = await lr.json();
+    const lr = await fetch('/api/setup/plex-libraries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: state.plexUrl, token: state.plexToken }),
+    })
+    .then(r => r.json());
+    const ld = lr;
     if (ld.libraries) {
       populateLibrarySelects(ld.libraries);
       document.getElementById('lib-assign').classList.add('visible');

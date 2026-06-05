@@ -6,13 +6,25 @@ Services that are not configured (no URL/key) are skipped gracefully.
 import requests
 from datetime import datetime, timezone
 
-from ..config import get as cfg
+from ..config import get as cfg, verify_ssl
 from .. import log
 
 
 def _get(url, headers=None, params=None, timeout=8):
     try:
-        r = requests.get(url, headers=headers or {}, params=params or {}, timeout=timeout, verify=False)
+        r = requests.get(url, headers=headers or {}, params=params or {},
+                        timeout=timeout, verify=verify_ssl())
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+def _get_external(url, headers=None, params=None, timeout=8):
+    """For external internet APIs — always verify SSL."""
+    try:
+        r = requests.get(url, headers=headers or {}, params=params or {},
+                        timeout=timeout, verify=True)
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -21,7 +33,7 @@ def _get(url, headers=None, params=None, timeout=8):
 
 def _github_latest(repo: str) -> tuple[str | None, dict]:
     """Return (latest_version, changes) from GitHub releases."""
-    data = _get(f"https://api.github.com/repos/{repo}/releases/latest",
+    data = _get_external(f"https://api.github.com/repos/{repo}/releases/latest",
                 headers={"Accept": "application/vnd.github+json"}, timeout=10)
     if not data:
         return None, {}
@@ -223,7 +235,7 @@ def _check_tmdb() -> dict:
     if not key:
         return {"name": "TMDB", "url": "https://www.themoviedb.org", "reachable": False, "not_configured": True}
 
-    data = _get("https://api.themoviedb.org/3/configuration", params={"api_key": key}, timeout=6)
+    data = _get_external("https://api.themoviedb.org/3/configuration", params={"api_key": key}, timeout=6)
     return {
         "name": "TMDB",
         "url": "https://www.themoviedb.org",

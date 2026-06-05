@@ -23,7 +23,7 @@ def _img(path: str | None, size: str) -> str | None:
 def _fetch_one(tmdb_id: int, media_type: str, api_key: str) -> dict | None:
     url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}"
     try:
-        resp = requests.get(url, params={"api_key": api_key}, timeout=30)
+        resp = requests.get(url, params={"api_key": api_key}, timeout=30, verify=True)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()

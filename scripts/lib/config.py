@@ -50,3 +50,8 @@ def require(name: str) -> str:
     if not value:
         raise RuntimeError(f"Required environment variable '{name}' is not set")
     return value
+
+
+def verify_ssl() -> bool:
+    """Whether to verify SSL certs for internal service connections. Default True."""
+    return get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
