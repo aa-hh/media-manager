@@ -257,11 +257,9 @@
     .general-card__desc { font-size: .8rem; color: var(--text-muted); margin-bottom: 14px; }
 
     /* ── Jobs ── */
-    .job-type { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: .06em; }
-    .job-type--process { background: #1a1f3a; color: #818cf8; }
-    .job-type--command { background: #1a2e1a; color: #86efac; }
     .job-running td { opacity: .6; }
     .btn--run { background: var(--accent); color: #fff; font-size: .8rem; padding: 5px 12px; }
+    .job-desc { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -351,8 +349,8 @@
         <div class="settings-section">
           <div class="settings-section__header">
             <div>
-              <div class="settings-section__title">Overseerr Jobs</div>
-              <div class="settings-section__subtitle">Scheduled maintenance tasks. Running a job manually won't affect its schedule.</div>
+              <div class="settings-section__title">Pipeline Jobs</div>
+              <div class="settings-section__subtitle">Manually trigger data collection or dashboard generation.</div>
             </div>
             <button class="btn btn--ghost btn--sm" onclick="loadJobs()">
               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -362,14 +360,13 @@
           <table class="mapping-table" id="jobs-table">
             <thead>
               <tr>
-                <th>Job name</th>
-                <th>Type</th>
-                <th>Next execution</th>
+                <th>Job</th>
+                <th>Last run</th>
                 <th style="width:120px"></th>
               </tr>
             </thead>
             <tbody id="jobs-tbody">
-              <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+              <tr><td colspan="3" class="empty-row">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -980,27 +977,19 @@ async function persistUsers() {
 // ── Jobs tab ─────────────────────────────────────────────────────────────────
 async function loadJobs() {
   const tbody = document.getElementById('jobs-tbody');
-  tbody.innerHTML = '<tr><td colspan="4" class="empty-row"><span class="spinner"></span> Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="3" class="empty-row"><span class="spinner"></span> Loading…</td></tr>';
   try {
     const r = await fetch('/api/settings/jobs');
-    const data = await r.json();
-    if (data.error) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty-row" style="color:var(--red)">${esc(data.error)}</td></tr>`;
-      return;
-    }
-    const jobs = Array.isArray(data) ? data : [];
-    if (!jobs.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No jobs found.</td></tr>';
-      return;
-    }
+    const jobs = await r.json();
     tbody.innerHTML = jobs.map(job => {
-      const typeClass = (job.type || '').toLowerCase() === 'command' ? 'job-type--command' : 'job-type--process';
-      const next = job.nextExecutionTime ? formatRelative(job.nextExecutionTime) : '—';
+      const lastRun = job.lastRun ? formatAgo(job.lastRun) : '—';
       const running = job.running ? ' class="job-running"' : '';
       return `<tr${running}>
-        <td>${esc(job.name)}</td>
-        <td><span class="job-type ${typeClass}">${esc(job.type || 'process')}</span></td>
-        <td>${job.running ? '<span class="spinner"></span> Running…' : esc(next)}</td>
+        <td>
+          <div style="font-weight:600;font-size:.875rem">${esc(job.name)}</div>
+          <div class="job-desc">${esc(job.description)}</div>
+        </td>
+        <td>${job.running ? '<span class="spinner"></span> Running…' : lastRun}</td>
         <td style="text-align:right">
           <button class="btn btn--run" ${job.running ? 'disabled' : ''} onclick="runJob('${esc(job.id)}', this)">
             <svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg>
@@ -1010,7 +999,7 @@ async function loadJobs() {
       </tr>`;
     }).join('');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-row" style="color:var(--red)">Failed to load jobs.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-row" style="color:var(--red)">Failed to load jobs.</td></tr>';
   }
 }
 
@@ -1021,10 +1010,10 @@ async function runJob(jobId, btn) {
     const r = await fetch(`/api/settings/jobs/${jobId}/run`, { method: 'POST' });
     const data = await r.json();
     if (data.ok) {
-      toast('Job triggered.', 'ok');
-      setTimeout(loadJobs, 800);
+      toast('Job started.', 'ok');
+      setTimeout(loadJobs, 600);
     } else {
-      toast(data.error || 'Failed to run job.', 'err');
+      toast(data.error || 'Failed to start job.', 'err');
       btn.disabled = false;
       btn.innerHTML = '<svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg> Run Now';
     }
@@ -1035,13 +1024,12 @@ async function runJob(jobId, btn) {
   }
 }
 
-function formatRelative(isoString) {
-  const diff = Math.round((new Date(isoString) - Date.now()) / 1000);
-  if (diff < 0) return 'overdue';
-  if (diff < 60) return `in ${diff}s`;
-  if (diff < 3600) return `in ${Math.round(diff / 60)}m`;
-  if (diff < 86400) return `in ${Math.round(diff / 3600)}h`;
-  return `in ${Math.round(diff / 86400)}d`;
+function formatAgo(dateStr) {
+  const diff = Math.round((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+  return `${Math.round(diff / 86400)}d ago`;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

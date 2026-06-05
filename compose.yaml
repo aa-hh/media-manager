@@ -10,8 +10,10 @@ services:
       - PUBLIC_DIR=/app/public
       - CONFIG_DIR=/app/config
       - DATA_DIR=/app/data
+      - PROJECT_DIR=/app/project
     volumes:
+      - ./:/app/project
       - ./public:/app/public:ro
       - ./config:/app/config
-      - ./data:/app/data:ro
+      - ./data:/app/data
     restart: unless-stopped
