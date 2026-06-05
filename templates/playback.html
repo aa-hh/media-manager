@@ -3,6 +3,97 @@
 {% block title %}Playback Analytics — Media Manager{% endblock %}
 
 {% block content %}
+
+{# ── Modal: Tautulli not configured ── #}
+{% if not tautulli_configured %}
+<div id="modal-no-tautulli" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:36px 40px;max-width:480px;width:90%;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.5)">
+    <div style="width:56px;height:56px;border-radius:12px;background:rgba(239,68,68,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <svg width="28" height="28" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="#ef4444" stroke="none"/></svg>
+    </div>
+    <h2 style="font-size:1.2rem;font-weight:700;margin:0 0 10px">Tautulli required</h2>
+    <p style="color:var(--text-muted);font-size:.9rem;line-height:1.6;margin:0 0 24px">Playback Analytics is powered by Tautulli. Connect your Tautulli instance on the Services page to get started.</p>
+    <a href="../services/index.html" style="display:inline-block;background:var(--accent);color:#fff;font-size:.9rem;font-weight:600;padding:10px 24px;border-radius:8px;text-decoration:none">Go to Services</a>
+  </div>
+</div>
+{% endif %}
+
+{# ── Modal: Tautulli configured but no webhook data ── #}
+{% if tautulli_configured and not analytics and not format_metrics %}
+<div id="modal-no-webhook" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:36px 40px;max-width:560px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,.5)">
+    <div style="width:56px;height:56px;border-radius:12px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <svg width="28" height="28" fill="none" stroke="#6366f1" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" rx="2"/><path d="M4 9h16M9 21V9"/></svg>
+    </div>
+    <h2 style="font-size:1.2rem;font-weight:700;margin:0 0 8px;text-align:center">Set up the Tautulli webhook</h2>
+    <p style="color:var(--text-muted);font-size:.875rem;line-height:1.6;margin:0 0 20px;text-align:center">Tautulli is connected but no play events have arrived yet. Add a webhook notification agent in Tautulli to start collecting data.</p>
+    <ol style="color:var(--text-muted);font-size:.875rem;line-height:1.8;margin:0 0 20px;padding-left:20px">
+      <li>In Tautulli, go to <strong style="color:var(--text)">Settings → Notification Agents</strong></li>
+      <li>Click <strong style="color:var(--text)">Add a new notification agent</strong> and choose <strong style="color:var(--text)">Webhook</strong></li>
+      <li>Set the <strong style="color:var(--text)">Webhook URL</strong> to <code style="background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:.82rem">&lt;this-server&gt;/api/tautulli/webhook</code></li>
+      <li>Set <strong style="color:var(--text)">Method</strong> to <strong style="color:var(--text)">POST</strong></li>
+      <li>Under <strong style="color:var(--text)">Triggers</strong>, enable <strong style="color:var(--text)">Playback Start</strong> and <strong style="color:var(--text)">Watched</strong></li>
+      <li>Under <strong style="color:var(--text)">Data</strong> → <strong style="color:var(--text)">JSON Data</strong>, paste the JSON below</li>
+      <li>Save and test — play something in Plex to verify</li>
+    </ol>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)">
+        <span style="font-size:.78rem;color:var(--text-muted);font-family:monospace">JSON Data payload</span>
+        <button id="copy-webhook-json" onclick="copyWebhookJson()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-size:.75rem;padding:3px 10px;border-radius:5px;cursor:pointer">Copy</button>
+      </div>
+      <pre id="webhook-json-block" style="margin:0;padding:12px;font-size:.72rem;line-height:1.5;overflow:auto;max-height:220px;color:var(--text)">{
+  "event": "{action}",
+  "event_at": "{unixtime}",
+
+  "media": {
+    "rating_key": "{rating_key}",
+    "tmdb_id": "{themoviedb_id}",
+    "media_type": "{media_type}"
+  },
+
+  "playback": {
+    "transcode_decision": "{transcode_decision}",
+    "video_decision": "{video_decision}",
+    "audio_decision": "{audio_decision}",
+    "subtitle_decision": "{subtitle_decision}",
+    "quality_profile": "{quality_profile}"
+  },
+
+  "source_quality": {
+    "container": "{container}",
+    "video_codec": "{video_codec}",
+    "video_bitrate": "{video_bitrate}",
+    "video_resolution": "{video_full_resolution}",
+    "video_bit_depth": "{video_bit_depth}",
+    "audio_codec": "{audio_codec}",
+    "audio_channels": "{audio_channels}"
+  },
+
+  "stream_quality": {
+    "stream_container": "{stream_container}",
+    "stream_video_codec": "{stream_video_codec}",
+    "stream_video_bitrate": "{stream_video_bitrate}",
+    "stream_video_resolution": "{stream_video_resolution}",
+    "stream_audio_codec": "{stream_audio_codec}",
+    "stream_audio_channels": "{stream_audio_channels}"
+  },
+
+  "client": {
+    "user": "{user}",
+    "friendly_name": "{friendly_name}",
+    "platform": "{platform}",
+    "platform_version": "{platform_version}",
+    "product": "{product}",
+    "player": "{player}",
+    "device": "{device}"
+  }
+}</pre>
+    </div>
+    <p style="color:var(--text-muted);font-size:.8rem;text-align:center;margin:0">Once you play something, refresh this page to see data appear.</p>
+  </div>
+</div>
+{% endif %}
+
 <div class="page-header">
   <h1 class="page-title">Playback Analytics</h1>
   <p class="page-sub">Stream decisions and transcode patterns from real play events.</p>
@@ -212,6 +303,17 @@
 
 {% block scripts %}
 <script>
+function copyWebhookJson() {
+  const text = document.getElementById('webhook-json-block').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-webhook-json');
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--green)';
+    btn.style.borderColor = 'var(--green)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
+  });
+}
+
 const PB_DEFAULTS = {
   responsive: true,
   plugins: { legend: { display: false } },

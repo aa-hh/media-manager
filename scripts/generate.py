@@ -815,10 +815,14 @@ def render_all(
     _render(env, "dashboard.html", public_dir / "index.html", ctx)
 
     # Playback Analytics
+    svc_list = (services or {}).get("services", []) if isinstance(services, dict) else []
+    tautulli_svc = next((s for s in svc_list if s.get("name") == "Tautulli"), None)
+    tautulli_configured = tautulli_svc is not None and not tautulli_svc.get("not_configured")
     (public_dir / "playback").mkdir(exist_ok=True)
     _render(env, "playback.html", public_dir / "playback" / "index.html", {
-        "analytics":     _compute_playback_analytics(db_path),
-        "format_metrics": _compute_format_metrics(db_path),
+        "analytics":            _compute_playback_analytics(db_path),
+        "format_metrics":       _compute_format_metrics(db_path),
+        "tautulli_configured":  tautulli_configured,
     })
 
     # TV Library
