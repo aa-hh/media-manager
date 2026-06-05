@@ -391,7 +391,19 @@ def generate() -> None:
 # ── Merge helpers (unchanged from original) ───────────────────────────────────
 
 def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
+    def _int_keys(store: dict) -> dict:
+        """Normalise string tmdb_id keys to int (JSON round-trip converts int keys to str)."""
+        out = {}
+        for k, v in store.items():
+            try:
+                out[int(k)] = v
+            except (ValueError, TypeError):
+                out[k] = v
+        return out
+
     def _merge_by_item(plex_store, taut_store):
+        plex_store = _int_keys(plex_store)
+        taut_store = _int_keys(taut_store)
         merged = {}
         for tmdb_id in set(plex_store) | set(taut_store):
             plex_item = plex_store.get(tmdb_id, {})
@@ -421,13 +433,15 @@ def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
              f"{len(merged_movie)} movies ({movie_count} user entries)")
 
     merged_seasons: dict = {}
-    plex_seasons = plex_data.get("tv_seasons", {})
-    taut_seasons = tautulli_data.get("tv_seasons", {})
+    plex_seasons = _int_keys(plex_data.get("tv_seasons", {}))
+    taut_seasons = _int_keys(tautulli_data.get("tv_seasons", {}))
     for tmdb_id in set(plex_seasons) | set(taut_seasons):
         merged_seasons[tmdb_id] = {}
-        for snum in set(plex_seasons.get(tmdb_id, {})) | set(taut_seasons.get(tmdb_id, {})):
-            p_users = plex_seasons.get(tmdb_id, {}).get(snum, {})
-            t_users = taut_seasons.get(tmdb_id, {}).get(snum, {})
+        p_s = plex_seasons.get(tmdb_id, {})
+        t_s = taut_seasons.get(tmdb_id, {})
+        for snum in set(p_s) | set(t_s):
+            p_users = p_s.get(snum, {})
+            t_users = t_s.get(snum, {})
             merged_seasons[tmdb_id][snum] = {}
             for user in set(p_users) | set(t_users):
                 p = p_users.get(user, {})
