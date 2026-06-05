@@ -388,12 +388,12 @@
           </div>
           <div class="settings-section__body">
             <div class="cron-presets" id="cron-presets">
-              <button class="preset-btn" data-cron="" onclick="selectPreset(this)">Off</button>
               <button class="preset-btn" data-cron="0 * * * *" onclick="selectPreset(this)">Hourly</button>
               <button class="preset-btn" data-cron="0 */3 * * *" onclick="selectPreset(this)">Every 3h</button>
               <button class="preset-btn" data-cron="0 */6 * * *" onclick="selectPreset(this)">Every 6h</button>
               <button class="preset-btn" data-cron="0 */12 * * *" onclick="selectPreset(this)">Every 12h</button>
               <button class="preset-btn" data-cron="0 3 * * *" onclick="selectPreset(this)">Daily 3am</button>
+              <button class="preset-btn" data-cron="0 3 * * 1" onclick="selectPreset(this)">Weekly Mon</button>
             </div>
             <div class="cron-input-row">
               <div class="form-group form-group--grow">
@@ -1060,7 +1060,7 @@ async function runJob(jobId, btn) {
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────────
-const PRESETS = ['', '0 * * * *', '0 */3 * * *', '0 */6 * * *', '0 */12 * * *', '0 3 * * *'];
+const PRESETS = ['0 * * * *', '0 */3 * * *', '0 */6 * * *', '0 */12 * * *', '0 3 * * *', '0 3 * * 1'];
 
 async function loadSchedule() {
   try {

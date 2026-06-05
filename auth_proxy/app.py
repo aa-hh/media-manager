@@ -95,11 +95,11 @@ async def _run_pipeline_scheduled() -> None:
 async def startup():
     global server_machine_id
 
-    # Start the APScheduler
+    # Start the APScheduler; fall back to default schedule if not explicitly configured
     _scheduler.start()
-    cron_expr = _read_config_env().get("CRON_SCHEDULE", "").strip()
-    if cron_expr:
-        _schedule_pipeline(cron_expr)
+    DEFAULT_CRON = "0 */6 * * *"
+    cron_expr = _read_config_env().get("CRON_SCHEDULE", DEFAULT_CRON).strip() or DEFAULT_CRON
+    _schedule_pipeline(cron_expr)
 
     if not PLEX_SERVER_URL or not PLEX_TOKEN:
         print("Info: PLEX_URL/PLEX_TOKEN not configured — Plex server identity check skipped")
@@ -718,15 +718,17 @@ async def settings_run_job(job_id: str):
     return JSONResponse({"ok": True})
 
 
+DEFAULT_CRON = "0 */6 * * *"
+
+
 @app.get("/api/settings/schedule")
 async def settings_get_schedule():
     """Return the current pipeline cron schedule."""
-    cron_expr = _read_config_env().get("CRON_SCHEDULE", "").strip()
+    cron_expr = _read_config_env().get("CRON_SCHEDULE", DEFAULT_CRON).strip() or DEFAULT_CRON
     next_run: str | None = None
-    if cron_expr:
-        job = _scheduler.get_job("pipeline")
-        if job and job.next_run_time:
-            next_run = job.next_run_time.isoformat()
+    job = _scheduler.get_job("pipeline")
+    if job and job.next_run_time:
+        next_run = job.next_run_time.isoformat()
     return JSONResponse({
         "cron": cron_expr,
         "nextRun": next_run,
@@ -735,21 +737,17 @@ async def settings_get_schedule():
 
 @app.post("/api/settings/schedule")
 async def settings_save_schedule(request: Request):
-    """Update the pipeline cron schedule."""
+    """Update the pipeline cron schedule. Empty string resets to default."""
     body = await request.json()
-    cron_expr = body.get("cron", "").strip()
-    if cron_expr:
-        try:
-            CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
-        except Exception as e:
-            return JSONResponse({"error": f"Invalid cron expression: {e}"}, status_code=400)
+    cron_expr = body.get("cron", "").strip() or DEFAULT_CRON
+    try:
+        CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
+    except Exception as e:
+        return JSONResponse({"error": f"Invalid cron expression: {e}"}, status_code=400)
     cfg = _read_config_env()
     cfg["CRON_SCHEDULE"] = cron_expr
     _write_config_env(cfg)
-    if cron_expr:
-        _schedule_pipeline(cron_expr)
-    else:
-        _scheduler.remove_all_jobs()
+    _schedule_pipeline(cron_expr)
     return JSONResponse({"ok": True})
 
 
