@@ -245,69 +245,138 @@ def _build_sparkline_points(snapshots):
     return " ".join(points)
 
 
-def _compute_format_metrics(shows: list, movies: list) -> list:
+def _compute_format_metrics(db_path: Path) -> list:
     """
-    Group items by source file format (codec + resolution for movies,
-    quality profile for TV) and aggregate transcode stats across each group.
-    Returns list sorted by item count desc.
+    Query webhook_plays.db and group by actual source file quality.
+    Each distinct (codec, resolution, hdr_type) seen in real plays becomes a row.
     """
+    import sqlite3, re
     from collections import defaultdict
 
+    if not db_path.exists():
+        return []
+
+    try:
+        con = sqlite3.connect(db_path)
+        rows = con.execute("""
+            SELECT
+                src_video_codec,
+                src_video_resolution,
+                src_hdr_type,
+                transcode_decision,
+                quality_profile
+            FROM plays
+            WHERE event = 'play'
+        """).fetchall()
+        con.close()
+    except Exception:
+        return []
+
+    if not rows:
+        return []
+
     groups: dict = defaultdict(lambda: {
-        "items": 0, "total_plays": 0,
         "direct": 0, "transcode": 0, "copy": 0,
         "transcode_qualities": {},
     })
 
-    for item in movies:
-        fi = item.get("file_info") or {}
-        codec = fi.get("video_codec") or ""
-        res   = fi.get("resolution") or ""
-        hdr   = " HDR" if fi.get("hdr") else ""
-        if codec or res:
-            key = f"{codec} {res}{hdr}".strip()
+    for codec, res, hdr, decision, qp in rows:
+        codec = (codec or "").lower()
+        res   = (res or "").lower()
+        hdr   = (hdr or "").strip()      # "HDR10", "DV", "HLG", or ""
+
+        # Normalise codec label
+        if "hevc" in codec or "h265" in codec or "h.265" in codec:
+            codec_label = "H.265"
+        elif "h264" in codec or "avc" in codec or "h.264" in codec:
+            codec_label = "H.264"
+        elif "av1" in codec:
+            codec_label = "AV1"
+        elif "vp9" in codec:
+            codec_label = "VP9"
+        elif "mpeg2" in codec or "mpeg-2" in codec:
+            codec_label = "MPEG-2"
+        elif "vc1" in codec or "vc-1" in codec:
+            codec_label = "VC-1"
         else:
-            key = "Unknown"
+            codec_label = codec.upper() if codec else "Unknown"
+
+        # Normalise resolution label
+        if res in ("4k", "2160", "2160p"):
+            res_label = "4K"
+        elif res in ("1080", "1080p"):
+            res_label = "1080p"
+        elif res in ("720", "720p"):
+            res_label = "720p"
+        elif res in ("480", "480p"):
+            res_label = "480p"
+        elif res in ("576", "576p"):
+            res_label = "576p"
+        else:
+            res_label = res.upper() if res else ""
+
+        parts = [codec_label, res_label]
+        if hdr:
+            parts.append(hdr)
+        key = " ".join(p for p in parts if p) or "Unknown"
 
         g = groups[key]
-        g["items"] += 1
-        ts = item.get("transcode_stats") or {}
-        g["total_plays"] += ts.get("total", 0)
-        g["direct"]      += ts.get("direct", 0)
-        g["transcode"]   += ts.get("transcode", 0)
-        g["copy"]        += ts.get("copy", 0)
-        for qp, cnt in (ts.get("transcode_qualities") or {}).items():
-            g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + cnt
+        d = (decision or "").lower()
+        if d == "direct play":
+            g["direct"] += 1
+        elif d == "transcode":
+            g["transcode"] += 1
+            if qp:
+                g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + 1
+        elif d == "copy":
+            g["copy"] += 1
 
-    for item in shows:
-        key = item.get("quality_profile_name") or "Unknown"
-        g = groups[key]
-        g["items"] += 1
-        ts = item.get("transcode_stats") or {}
-        g["total_plays"] += ts.get("total", 0)
-        g["direct"]      += ts.get("direct", 0)
-        g["transcode"]   += ts.get("transcode", 0)
-        g["copy"]        += ts.get("copy", 0)
-        for qp, cnt in (ts.get("transcode_qualities") or {}).items():
-            g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + cnt
+    def _fmt_rank(fmt: str) -> tuple:
+        s = fmt.lower()
+        if "4k" in s or "2160" in s:
+            res = 2160
+        elif "1080" in s:
+            res = 1080
+        elif "720" in s:
+            res = 720
+        elif "576" in s:
+            res = 576
+        elif "480" in s:
+            res = 480
+        else:
+            m = re.search(r"(\d{3,4})", s)
+            res = int(m.group(1)) if m else 0
+        hdr = 1 if any(x in s for x in ("hdr", "dv", "hlg", "dolby")) else 0
+        codec = 0
+        if "av1" in s:
+            codec = 5
+        elif "h.265" in s or "hevc" in s:
+            codec = 4
+        elif "h.264" in s or "avc" in s:
+            codec = 3
+        elif "vp9" in s:
+            codec = 2
+        elif "mpeg" in s or "vc-1" in s:
+            codec = 1
+        return (res, hdr, codec)
+
+    def _quality_sort_key(qp: str) -> int:
+        s = qp.lower()
+        if "original" in s or "max" in s:
+            return 9999
+        for pat in (r"(\d+)k", r"(\d{3,4})p", r"(\d+)\s*mbps.*?(\d+)p"):
+            m = re.search(pat, s)
+            if m:
+                val = int(m.group(m.lastindex))
+                return val * (2160 if "4k" in s else 1)
+        m = re.search(r"(\d+)", s)
+        return int(m.group(1)) if m else 0
 
     result = []
-    for fmt, g in sorted(groups.items(), key=lambda x: -x[1]["items"]):
-        total = g["total_plays"]
-        def _quality_sort_key(qp: str) -> int:
-            """Extract resolution height for sorting highest→lowest."""
-            import re
-            s = qp.lower()
-            if "original" in s or "max" in s:
-                return 9999
-            for pat in (r"(\d+)k", r"(\d{3,4})p", r"(\d+)\s*mbps.*?(\d+)p"):
-                m = re.search(pat, s)
-                if m:
-                    val = int(m.group(m.lastindex))
-                    return val * (2160 if "4k" in s else 1)
-            m = re.search(r"(\d+)", s)
-            return int(m.group(1)) if m else 0
-
+    for fmt, g in sorted(groups.items(), key=lambda x: _fmt_rank(x[0]), reverse=True):
+        total = g["direct"] + g["transcode"] + g["copy"]
+        if total == 0:
+            continue
         transcode_total = sum(g["transcode_qualities"].values())
         quality_dist = []
         if transcode_total:
@@ -315,21 +384,203 @@ def _compute_format_metrics(shows: list, movies: list) -> list:
                                    key=lambda x: -_quality_sort_key(x[0])):
                 quality_dist.append({
                     "quality": qp,
-                    "pct": round(cnt / transcode_total * 100),
+                    "count":   cnt,
+                    "pct":     round(cnt / total * 100),
+                    "pct_of_transcode": round(cnt / transcode_total * 100),
                 })
         result.append({
-            "format":          fmt,
-            "items":           g["items"],
-            "total_plays":     total,
-            "direct_pct":      round(g["direct"]    / total * 100) if total else None,
-            "transcode_pct":   round(g["transcode"] / total * 100) if total else None,
-            "copy_pct":        round(g["copy"]      / total * 100) if total else None,
-            "quality_dist":    quality_dist,
+            "format":        fmt,
+            "total_plays":   total,
+            "direct_pct":    round(g["direct"]    / total * 100),
+            "transcode_pct": round(g["transcode"] / total * 100),
+            "copy_pct":      round(g["copy"]      / total * 100),
+            "quality_dist":  quality_dist,
         })
     return result
 
 
-def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None):
+def _compute_playback_analytics(db_path: Path) -> dict | None:
+    """Query webhook_plays.db and return all analytics needed for the Playback page."""
+    import sqlite3
+    from collections import defaultdict
+
+    if not db_path.exists():
+        return None
+
+    try:
+        con = sqlite3.connect(db_path)
+        rows = con.execute("""
+            SELECT transcode_decision, video_decision, audio_decision, subtitle_decision,
+                   quality_profile, src_video_codec, src_video_resolution, src_hdr_type,
+                   src_audio_codec, src_audio_channels,
+                   stream_video_codec, stream_video_resolution,
+                   client_platform, client_friendly_name
+            FROM plays WHERE event = 'play'
+        """).fetchall()
+        con.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    total = len(rows)
+    direct = transcode = copy_ = 0
+
+    # Transcode reason buckets
+    reason_counts: dict[str, int] = {"Video": 0, "Audio": 0, "Video + Audio": 0, "Subtitle burn": 0, "Other": 0}
+
+    # Platform: {name: {direct, transcode, copy}}
+    platforms: dict[str, dict] = defaultdict(lambda: {"direct": 0, "transcode": 0, "copy": 0})
+
+    # Audio codec transcode rate: {codec: {transcode, total}}
+    audio_codecs: dict[str, dict] = defaultdict(lambda: {"transcode": 0, "total": 0})
+
+    # HDR outcomes: {hdr_type: {direct, transcode, copy}}
+    hdr_outcomes: dict[str, dict] = defaultdict(lambda: {"direct": 0, "transcode": 0, "copy": 0})
+
+    # Top transcoders: {user: count}
+    transcoders: dict[str, int] = defaultdict(int)
+
+    for (td, vd, ad, sd, qp, src_vc, src_vr, hdr, src_ac, src_ach, stm_vc, stm_vr, platform, user) in rows:
+        td = (td or "").lower()
+        vd = (vd or "").lower()
+        ad = (ad or "").lower()
+        sd = (sd or "").lower()
+        platform = (platform or "Unknown").strip() or "Unknown"
+        user = (user or "Unknown").strip() or "Unknown"
+        src_ac = (src_ac or "").lower()
+
+        if td == "direct play":
+            direct += 1
+        elif td == "transcode":
+            transcode += 1
+        elif td == "copy":
+            copy_ += 1
+
+        # Platform
+        p = platforms[platform]
+        if td == "direct play":
+            p["direct"] += 1
+        elif td == "transcode":
+            p["transcode"] += 1
+        else:
+            p["copy"] += 1
+
+        # Transcode reason
+        if td == "transcode":
+            video_t = vd == "transcode"
+            audio_t = ad == "transcode"
+            sub_burn = sd == "burn"
+            if video_t and audio_t:
+                reason_counts["Video + Audio"] += 1
+            elif video_t:
+                reason_counts["Video"] += 1
+            elif audio_t:
+                reason_counts["Audio"] += 1
+            elif sub_burn:
+                reason_counts["Subtitle burn"] += 1
+            else:
+                reason_counts["Other"] += 1
+            transcoders[user] += 1
+
+        # Audio codec
+        if src_ac:
+            ac = audio_codecs[src_ac.upper()]
+            ac["total"] += 1
+            if ad == "transcode":
+                ac["transcode"] += 1
+
+        # HDR outcomes
+        if hdr:
+            h = hdr_outcomes[hdr]
+            if td == "direct play":
+                h["direct"] += 1
+            elif td == "transcode":
+                h["transcode"] += 1
+            else:
+                h["copy"] += 1
+
+    # Build platform_rates — min 3 plays, sorted worst→best direct%
+    platform_rates = []
+    for name, counts in platforms.items():
+        pt = counts["direct"] + counts["transcode"] + counts["copy"]
+        if pt < 3:
+            continue
+        platform_rates.append({
+            "platform": name,
+            "plays": pt,
+            "direct_pct": round(counts["direct"] / pt * 100),
+            "transcode_pct": round(counts["transcode"] / pt * 100),
+        })
+    platform_rates.sort(key=lambda x: x["direct_pct"])
+
+    # Build audio_causes — sorted by transcode% desc
+    audio_causes = []
+    for codec, counts in audio_codecs.items():
+        if counts["total"] < 2:
+            continue
+        audio_causes.append({
+            "codec": codec,
+            "plays": counts["total"],
+            "transcode_pct": round(counts["transcode"] / counts["total"] * 100),
+        })
+    audio_causes.sort(key=lambda x: -x["transcode_pct"])
+
+    # HDR outcomes list
+    hdr_list = []
+    for hdr_type, counts in hdr_outcomes.items():
+        ht = counts["direct"] + counts["transcode"] + counts["copy"]
+        hdr_list.append({
+            "hdr_type": hdr_type,
+            "plays": ht,
+            "direct_pct":    round(counts["direct"]    / ht * 100) if ht else 0,
+            "transcode_pct": round(counts["transcode"] / ht * 100) if ht else 0,
+            "copy_pct":      round(counts["copy"]      / ht * 100) if ht else 0,
+        })
+    hdr_list.sort(key=lambda x: -x["plays"])
+
+    # Transcode reasons for doughnut (exclude zeros)
+    reason_colors = {
+        "Video":         "#ef4444",
+        "Audio":         "#f59e0b",
+        "Video + Audio": "#f97316",
+        "Subtitle burn": "#6366f1",
+        "Other":         "#6b7280",
+    }
+    transcode_reasons = [
+        {"label": k, "count": v, "color": reason_colors[k]}
+        for k, v in reason_counts.items() if v > 0
+    ]
+
+    # Top transcoders (top 8)
+    top_transcoders = sorted(
+        [{"user": u, "transcode_count": c} for u, c in transcoders.items()],
+        key=lambda x: -x["transcode_count"]
+    )[:8]
+
+    # Worst platform (most transcodes, min 3 plays)
+    worst_platform = None
+    if platform_rates:
+        worst = max(platform_rates, key=lambda x: x["transcode_pct"])
+        if worst["transcode_pct"] > 0:
+            worst_platform = worst["platform"]
+
+    return {
+        "total_plays":       total,
+        "direct_pct":        round(direct    / total * 100) if total else 0,
+        "transcode_pct":     round(transcode / total * 100) if total else 0,
+        "copy_pct":          round(copy_     / total * 100) if total else 0,
+        "worst_platform":    worst_platform,
+        "transcode_reasons": transcode_reasons,
+        "platform_rates":    platform_rates,
+        "audio_causes":      audio_causes,
+        "hdr_outcomes":      hdr_list,
+        "top_transcoders":   top_transcoders,
+    }
+
+
+def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None, db_path: Path | None = None):
     all_items = shows + movies
     total_tv_gb = sum(s["size_gb"] for s in shows)
     total_movie_gb = sum(m["size_gb"] for m in movies)
@@ -411,7 +662,6 @@ def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None)
         "shows": shows,
         "movies": movies,
         "users": users,
-        "format_metrics": _compute_format_metrics(shows, movies),
     }
 
 
@@ -558,9 +808,18 @@ def render_all(
     if assets_dir.exists():
         shutil.copytree(str(assets_dir), str(assets_out), dirs_exist_ok=True)
 
+    db_path = public_dir.parent / "data" / "webhook_plays.db"
+
     # Dashboard
-    ctx = _build_dashboard_context(shows, movies, users, forecast, watchlist_ids)
+    ctx = _build_dashboard_context(shows, movies, users, forecast, watchlist_ids, db_path=db_path)
     _render(env, "dashboard.html", public_dir / "index.html", ctx)
+
+    # Playback Analytics
+    (public_dir / "playback").mkdir(exist_ok=True)
+    _render(env, "playback.html", public_dir / "playback" / "index.html", {
+        "analytics":     _compute_playback_analytics(db_path),
+        "format_metrics": _compute_format_metrics(db_path),
+    })
 
     # TV Library
     (public_dir / "tv").mkdir(exist_ok=True)

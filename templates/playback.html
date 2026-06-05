@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% set active = "playback" %}
+{% block title %}Playback Analytics — Media Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Playback Analytics</h1>
+  <p class="page-sub">Stream decisions and transcode patterns from real play events.</p>
+</div>
+
+<div class="content">
+
+{% if not analytics and not format_metrics %}
+  <div class="section">
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
+      <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 16px;display:block;opacity:.4"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+      <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">No playback data yet</div>
+      <div style="font-size:.875rem">Configure the Tautulli webhook to start collecting play events.</div>
+    </div>
+  </div>
+{% else %}
+
+  {# ── Summary cards ── #}
+  {% if analytics %}
+  <div class="section">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Plays</div>
+        <div class="stat-value">{{ analytics.total_plays }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Direct Play</div>
+        <div class="stat-value" style="color:var(--green)">{{ analytics.direct_pct }}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Transcode</div>
+        <div class="stat-value" style="color:{{ 'var(--red)' if analytics.transcode_pct >= 50 else 'var(--yellow)' if analytics.transcode_pct >= 20 else 'var(--text-muted)' }}">{{ analytics.transcode_pct }}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Copy (remux)</div>
+        <div class="stat-value" style="color:var(--text-muted)">{{ analytics.copy_pct }}%</div>
+      </div>
+      {% if analytics.worst_platform %}
+      <div class="stat-card">
+        <div class="stat-label">Most Problematic Client</div>
+        <div class="stat-value" style="font-size:1.1rem">{{ analytics.worst_platform }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Format Performance ── #}
+  {% if format_metrics %}
+  <div class="section">
+    <div class="section-title">Format Performance</div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Direct play rate by source file format. Rows appear as new formats are played.</p>
+    <div class="table-card" style="overflow:auto">
+      <table class="data-table" style="min-width:700px">
+        <thead>
+          <tr>
+            <th>Format</th>
+            <th style="text-align:right">Plays</th>
+            <th style="min-width:130px">Direct Play</th>
+            <th style="min-width:80px">Copy</th>
+            <th style="min-width:80px">Transcode</th>
+            <th style="min-width:220px;color:var(--text-muted);font-weight:400;font-size:.8rem">Transcode quality breakdown</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in format_metrics %}
+          <tr>
+            <td>
+              {% set parts = row.format.split(" ") %}
+              {% set codec = parts[0] if parts|length > 0 else "" %}
+              {% set res   = parts[1] if parts|length > 1 else "" %}
+              {% set hdr   = parts[2] if parts|length > 2 else "" %}
+              {% set fmt_tags = file_format_tags({"file_info": {"video_codec": codec, "resolution": res, "hdr": hdr != ""}, "quality_profile_name": row.format}) %}
+              {% for label, cls in fmt_tags %}
+                <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
+              {% else %}
+                <span style="font-size:.875rem">{{ row.format }}</span>
+              {% endfor %}
+              {% if hdr %}<span class="fmt-tag tag-hdr" style="margin-right:3px">{{ hdr }}</span>{% endif %}
+            </td>
+            <td style="text-align:right;color:var(--text-muted)">{{ row.total_plays }}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
+                  <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
+                </div>
+                <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
+              </div>
+            </td>
+            <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
+            <td><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
+            <td>
+              {% if row.quality_dist %}
+                <div style="display:flex;flex-wrap:wrap;gap:4px">
+                  {% for q in row.quality_dist %}
+                    <span style="font-size:.75rem;background:var(--bg3);border-radius:4px;padding:2px 6px;white-space:nowrap">
+                      <span style="color:var(--text-muted)">{{ q.quality }}</span>
+                      <span style="color:{{ 'var(--red)' if q.pct >= 20 else 'var(--yellow)' if q.pct >= 10 else 'var(--text-muted)' }};margin-left:4px">{{ q.pct }}%</span>
+                    </span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span style="color:var(--text-muted);font-size:.8rem">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Playback decision charts ── #}
+  {% if analytics %}
+  <div class="section">
+    <div class="section-title">Transcode Analysis</div>
+    <div class="chart-grid">
+
+      {# Transcode reason doughnut #}
+      {% if analytics.transcode_reasons %}
+      <div class="chart-card chart-card--small">
+        <div class="chart-title">Why things transcode</div>
+        <canvas id="transcodeReasonChart"></canvas>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px">
+          {% for r in analytics.transcode_reasons %}
+            <span style="font-size:.75rem;display:flex;align-items:center;gap:5px">
+              <span style="width:10px;height:10px;border-radius:50%;background:{{ r.color }};flex-shrink:0"></span>
+              <span style="color:var(--text-muted)">{{ r.label }}</span>
+              <span style="color:var(--text)">{{ r.count }}</span>
+            </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Platform direct play rate #}
+      {% if analytics.platform_rates %}
+      <div class="chart-card">
+        <div class="chart-title">Platform direct play rate</div>
+        <canvas id="platformRateChart"></canvas>
+      </div>
+      {% endif %}
+
+      {# Audio codec transcode rate #}
+      {% if analytics.audio_causes %}
+      <div class="chart-card">
+        <div class="chart-title">Audio codec transcode rate</div>
+        <canvas id="audioCodecChart"></canvas>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  {# ── HDR & User section ── #}
+  <div class="section">
+    <div class="section-title">HDR &amp; Users</div>
+    <div class="chart-grid">
+
+      {# HDR outcomes table #}
+      {% if analytics.hdr_outcomes %}
+      <div class="chart-card">
+        <div class="chart-title">HDR content outcomes</div>
+        <table class="data-table" style="margin-top:8px">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th style="text-align:right">Plays</th>
+              <th>Direct</th>
+              <th>Transcode</th>
+              <th>Copy</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in analytics.hdr_outcomes %}
+            <tr>
+              <td>
+                <span class="fmt-tag tag-hdr">{{ h.hdr_type }}</span>
+              </td>
+              <td style="text-align:right;color:var(--text-muted)">{{ h.plays }}</td>
+              <td><span style="color:{{ 'var(--green)' if h.direct_pct >= 80 else 'var(--yellow)' if h.direct_pct >= 50 else 'var(--red)' }};font-size:.82rem">{{ h.direct_pct }}%</span></td>
+              <td><span style="color:{{ 'var(--red)' if h.transcode_pct >= 50 else 'var(--yellow)' if h.transcode_pct >= 20 else 'var(--text-muted)' }};font-size:.82rem">{{ h.transcode_pct }}%</span></td>
+              <td><span style="color:var(--text-muted);font-size:.82rem">{{ h.copy_pct }}%</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# Top transcoding users #}
+      {% if analytics.top_transcoders %}
+      <div class="chart-card">
+        <div class="chart-title">Top transcoding users</div>
+        <canvas id="topTranscodersChart"></canvas>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PB_DEFAULTS = {
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } },
+    y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
+  }
+};
+
+{% if analytics and analytics.transcode_reasons %}
+new Chart(document.getElementById('transcodeReasonChart'), {
+  type: 'doughnut',
+  data: {
+    labels: {{ analytics.transcode_reasons | map(attribute='label') | list | tojson }},
+    datasets: [{
+      data:            {{ analytics.transcode_reasons | map(attribute='count') | list | tojson }},
+      backgroundColor: {{ analytics.transcode_reasons | map(attribute='color') | list | tojson }},
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '65%',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } }
+    }
+  }
+});
+{% endif %}
+
+{% if analytics and analytics.platform_rates %}
+(function() {
+  const platforms = {{ analytics.platform_rates | tojson }};
+  const directPcts = platforms.map(p => p.direct_pct);
+  const colors = directPcts.map(v => v >= 80 ? '#22c55e' : v >= 50 ? '#f59e0b' : '#ef4444');
+  new Chart(document.getElementById('platformRateChart'), {
+    type: 'bar',
+    data: {
+      labels: platforms.map(p => p.platform),
+      datasets: [{
+        data: directPcts,
+        backgroundColor: colors,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      ...PB_DEFAULTS,
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}% direct play (${platforms[ctx.dataIndex].plays} plays)` } } },
+      scales: {
+        x: { min: 0, max: 100, ticks: { color: '#8892aa', callback: v => v + '%' }, grid: { color: '#2e3855' } },
+        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
+      }
+    }
+  });
+})();
+{% endif %}
+
+{% if analytics and analytics.audio_causes %}
+(function() {
+  const codecs = {{ analytics.audio_causes | tojson }};
+  new Chart(document.getElementById('audioCodecChart'), {
+    type: 'bar',
+    data: {
+      labels: codecs.map(c => c.codec),
+      datasets: [{
+        data: codecs.map(c => c.transcode_pct),
+        backgroundColor: codecs.map(c => c.transcode_pct >= 50 ? '#ef4444' : c.transcode_pct >= 20 ? '#f59e0b' : '#6366f1'),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      ...PB_DEFAULTS,
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}% transcode rate (${codecs[ctx.dataIndex].plays} plays)` } } },
+      scales: {
+        x: { min: 0, max: 100, ticks: { color: '#8892aa', callback: v => v + '%' }, grid: { color: '#2e3855' } },
+        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
+      }
+    }
+  });
+})();
+{% endif %}
+
+{% if analytics and analytics.top_transcoders %}
+(function() {
+  const users = {{ analytics.top_transcoders | tojson }};
+  new Chart(document.getElementById('topTranscodersChart'), {
+    type: 'bar',
+    data: {
+      labels: users.map(u => u.user),
+      datasets: [{
+        data: users.map(u => u.transcode_count),
+        backgroundColor: 'rgba(239,68,68,.7)',
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      ...PB_DEFAULTS,
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} transcodes` } } },
+      scales: {
+        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } },
+        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
+      }
+    }
+  });
+})();
+{% endif %}
+</script>
+{% endblock %}
