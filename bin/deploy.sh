@@ -7,6 +7,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# ── Load PORT from config/.env so compose port mapping resolves correctly ────
+if [[ -f "$ROOT/config/.env" ]]; then
+    export $(grep -E '^PORT=' "$ROOT/config/.env" | xargs) 2>/dev/null || true
+fi
+PORT="${PORT:-10400}"
+
 # ── Colours ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
     BOLD='\033[1m'; DIM='\033[2m'; GREEN='\033[32m'
