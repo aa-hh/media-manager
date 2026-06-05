@@ -96,7 +96,7 @@ def _cfg() -> dict:
 
 # ── Individual collectors ─────────────────────────────────────────────────────
 
-def fetch_sonarr() -> None:
+def fetch_sonarr(_build: bool = True) -> None:
     log.info("=== Sonarr fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -114,9 +114,11 @@ def fetch_sonarr() -> None:
     log.info(f"Sonarr: {len(items)} items saved")
     _record_run("sonarr")
     log.info("=== Sonarr fetch complete ===")
+    if _build:
+        build()
 
 
-def fetch_radarr() -> None:
+def fetch_radarr(_build: bool = True) -> None:
     log.info("=== Radarr fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -134,9 +136,11 @@ def fetch_radarr() -> None:
     log.info(f"Radarr: {len(items)} items saved")
     _record_run("radarr")
     log.info("=== Radarr fetch complete ===")
+    if _build:
+        build()
 
 
-def fetch_overseerr() -> None:
+def fetch_overseerr(_build: bool = True) -> None:
     log.info("=== Overseerr fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -168,9 +172,11 @@ def fetch_overseerr() -> None:
     log.info(f"Overseerr: {len(requests_list)} requests saved")
     _record_run("overseerr")
     log.info("=== Overseerr fetch complete ===")
+    if _build:
+        build()
 
 
-def fetch_plex() -> None:
+def fetch_plex(_build: bool = True) -> None:
     log.info("=== Plex fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -188,9 +194,11 @@ def fetch_plex() -> None:
     (DATA_DIR / "raw_plex.json").write_text(json.dumps(data, indent=2))
     _record_run("plex")
     log.info("=== Plex fetch complete ===")
+    if _build:
+        build()
 
 
-def fetch_tautulli() -> None:
+def fetch_tautulli(_build: bool = True) -> None:
     log.info("=== Tautulli fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -207,9 +215,11 @@ def fetch_tautulli() -> None:
     (DATA_DIR / "raw_tautulli.json").write_text(json.dumps(data, indent=2))
     _record_run("tautulli")
     log.info("=== Tautulli fetch complete ===")
+    if _build:
+        build()
 
 
-def fetch_tmdb() -> None:
+def fetch_tmdb(_build: bool = True) -> None:
     log.info("=== TMDB enrichment started ===")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
@@ -223,6 +233,8 @@ def fetch_tmdb() -> None:
     tmdb.enrich(radarr_items, "movie", c["tmdb_key"], CACHE_DIR / "tmdb_movies.json")
     _record_run("tmdb")
     log.info("=== TMDB enrichment complete ===")
+    if _build:
+        build()
 
 
 def fetch_services() -> None:
@@ -303,12 +315,12 @@ def collect() -> None:
     if not c["sonarr_urls"] and not c["radarr_urls"]:
         raise RuntimeError("At least one of SONARR_URL or RADARR_URL must be configured.")
 
-    fetch_sonarr()
-    fetch_radarr()
-    fetch_tmdb()
-    fetch_overseerr()
-    fetch_plex()
-    fetch_tautulli()
+    fetch_sonarr(_build=False)
+    fetch_radarr(_build=False)
+    fetch_tmdb(_build=False)
+    fetch_overseerr(_build=False)
+    fetch_plex(_build=False)
+    fetch_tautulli(_build=False)
     fetch_services()
     build()
 
