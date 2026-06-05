@@ -274,7 +274,7 @@ def _compute_format_metrics(db_path: Path) -> dict:
                 src_video_codec,
                 src_video_resolution,
                 src_hdr_type,
-                transcode_decision,
+                video_decision,
                 stream_video_resolution
             FROM plays
             WHERE event = 'play'
@@ -330,16 +330,16 @@ def _compute_format_metrics(db_path: Path) -> dict:
         key = " ".join(p for p in parts if p) or "Unknown"
 
         g = groups[key]
-        d = (decision or "").lower()
+        vd = (decision or "").lower()
         delivered = _norm_res(stream_res) if stream_res else res_label
-        if d == "direct play":
+        if vd == "direct play":
             g["direct"] += 1
-        elif d in ("copy", "direct stream"):
+        elif vd == "copy":
             g["copy"] += 1
-        elif d == "transcode":
+        elif vd == "transcode":
             g["transcode"] += 1
         else:
-            continue  # unknown decision — skip entirely
+            continue
         g["quality_counts"][delivered] += 1
 
     def _fmt_rank(fmt: str) -> tuple:

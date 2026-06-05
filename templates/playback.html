@@ -147,25 +147,25 @@
   {% if format_metrics and format_metrics.rows %}
   {% set qps = format_metrics.quality_profiles %}
   <div class="section">
-    <div class="section-title">Format Performance</div>
-    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Delivery resolution breakdown by source format. Quality columns show what resolution the client actually received.</p>
+    <div class="section-title">Video Format Performance</div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Video decision breakdown by source format. Resolution columns show what the client actually received.</p>
     <div class="table-card" style="overflow:auto">
       <table class="data-table" style="min-width:560px">
         <thead>
           <tr>
-            <th>Format</th>
-            <th style="text-align:right">Plays</th>
-            <th style="min-width:130px">Direct Play</th>
-            <th style="min-width:80px">Direct Stream</th>
+            <th style="width:1%;white-space:nowrap">Format</th>
+            <th style="text-align:right;width:1%;white-space:nowrap">Plays</th>
+            <th style="min-width:140px">Direct Play</th>
+            <th style="min-width:140px">Direct Stream</th>
             {% for qp in qps %}
-            <th style="text-align:right;min-width:80px">{{ qp }}</th>
+            <th style="text-align:right;min-width:70px">{{ qp }}</th>
             {% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for row in format_metrics.rows %}
           <tr>
-            <td>
+            <td style="white-space:nowrap">
               {% set parts = row.format.split(" ") %}
               {% set codec = parts[0] if parts|length > 0 else "" %}
               {% set res   = parts[1] if parts|length > 1 else "" %}
@@ -187,8 +187,14 @@
                 <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
               </div>
             </td>
-            <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
-
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
+                  <div style="width:{{ row.copy_pct }}%;height:100%;background:#6366f1;border-radius:3px"></div>
+                </div>
+                <span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span>
+              </div>
+            </td>
             {% for qp in qps %}
               {% set pct = row.quality_pcts.get(qp, 0) %}
               <td style="text-align:right;font-size:.82rem;color:var(--text-muted)">{{ pct if pct else '—' }}{% if pct %}%{% endif %}</td>
