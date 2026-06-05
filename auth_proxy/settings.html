@@ -1010,9 +1010,13 @@ async function persistUsers() {
 }
 
 // ── Jobs tab ─────────────────────────────────────────────────────────────────
+let _jobPollTimer = null;
+
 async function loadJobs() {
   const tbody = document.getElementById('jobs-tbody');
-  tbody.innerHTML = '<tr><td colspan="3" class="empty-row"><span class="spinner"></span> Loading…</td></tr>';
+  if (!tbody.children.length || tbody.querySelector('.empty-row')) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-row"><span class="spinner"></span> Loading…</td></tr>';
+  }
   try {
     const r = await fetch('/api/settings/jobs');
     const jobs = await r.json();
@@ -1033,6 +1037,11 @@ async function loadJobs() {
         </td>
       </tr>`;
     }).join('');
+    // Poll while any job is running
+    clearTimeout(_jobPollTimer);
+    if (jobs.some(j => j.running)) {
+      _jobPollTimer = setTimeout(loadJobs, 2000);
+    }
   } catch {
     tbody.innerHTML = '<tr><td colspan="3" class="empty-row" style="color:var(--red)">Failed to load jobs.</td></tr>';
   }
@@ -1046,7 +1055,7 @@ async function runJob(jobId, btn) {
     const data = await r.json();
     if (data.ok) {
       toast('Job started.', 'ok');
-      setTimeout(loadJobs, 600);
+      loadJobs();
     } else {
       toast(data.error || 'Failed to start job.', 'err');
       btn.disabled = false;
