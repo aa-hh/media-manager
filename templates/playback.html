@@ -157,7 +157,6 @@
             <th style="text-align:right">Plays</th>
             <th style="min-width:130px">Direct Play</th>
             <th style="min-width:60px">Copy</th>
-            <th style="min-width:60px">Transcode</th>
             {% for qp in qps %}
             <th style="text-align:right;min-width:80px">{{ qp }}</th>
             {% endfor %}
@@ -189,7 +188,6 @@
               </div>
             </td>
             <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
-            <td><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
             {% for qp in qps %}
               {% set pct = row.quality_pcts.get(qp, 0) %}
               <td style="text-align:right;font-size:.82rem;color:{% if qp == 'Original' %}{{ 'var(--green)' if pct >= 80 else ('var(--yellow)' if pct >= 50 else 'var(--red)') }}{% else %}{{ 'var(--red)' if pct >= 50 else ('var(--yellow)' if pct >= 20 else 'var(--text-muted)') }}{% endif %}">{{ pct }}%</td>
