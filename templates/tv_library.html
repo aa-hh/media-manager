@@ -67,6 +67,10 @@
           {% else %}
             <span class="badge library">Library</span>
           {% endif %}
+          {% set fmt_tags = file_format_tags(show) %}
+          {% if fmt_tags %}
+            <span class="fmt-tag {{ fmt_tags[0][1] }}" style="font-size:.65rem">{{ fmt_tags[0][0] }}</span>
+          {% endif %}
           {% if show.total_plays > 0 %}
             <span style="font-size:.75rem;color:var(--text-muted)">{{ show.total_plays }} plays</span>
           {% endif %}

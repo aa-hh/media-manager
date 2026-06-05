@@ -302,14 +302,27 @@ def build() -> None:
 
     watch_data = _merge_watch_data(plex_data, tautulli_data)
 
+    # Transcode stats come from Tautulli only (Plex doesn't expose them)
+    def _int_key_dict(d: dict) -> dict:
+        try:
+            return {int(k): v for k, v in d.items()}
+        except Exception:
+            return d
+
+    raw_transcode = tautulli_data.get("transcode_stats", {})
+    transcode_tv    = _int_key_dict(raw_transcode.get("tv", {}))
+    transcode_movie = _int_key_dict(raw_transcode.get("movie", {}))
+
     (DATA_DIR / "watchlist.json").write_text(json.dumps(watchlist, indent=2))
 
     shows = enrichment.build_shows(
         sonarr_items, tv_tmdb, ov_requests, watch_data["tv"],
         watch_data.get("tv_seasons", {}),
+        transcode_stats=transcode_tv,
     )
     movies = enrichment.build_movies(
-        radarr_items, movie_tmdb, ov_requests, watch_data["movie"]
+        radarr_items, movie_tmdb, ov_requests, watch_data["movie"],
+        transcode_stats=transcode_movie,
     )
 
     deletion.apply(shows)

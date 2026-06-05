@@ -45,6 +45,7 @@ def build_shows(
     overseerr_requests: list[dict],
     tautulli_tv: dict,
     season_watch: dict | None = None,
+    transcode_stats: dict | None = None,
 ) -> list[dict]:
     # Index overseerr requests by tmdb_id (most recent wins per item)
     req_by_tmdb: dict[int, dict] = {}
@@ -139,7 +140,8 @@ def build_shows(
             "size_gb": _gb(item["size_bytes"]),
             "episode_count": item.get("episode_count", 0),
             "total_episodes": item.get("total_episodes", 0),
-            "quality_profile_id": item.get("quality_profile_id"),
+            "quality_profile_id":   item.get("quality_profile_id"),
+            "quality_profile_name": item.get("quality_profile_name", ""),
             "seasons": seasons,
             "added_at": item.get("added_at"),
             "request": {
@@ -151,6 +153,7 @@ def build_shows(
             "watch_data": watch_data,
             "requester_status": rws,
             "total_plays": sum(w["plays"] for w in watch_data.values()),
+            "transcode_stats": (transcode_stats or {}).get(tmdb_id),
             "any_watched": any(
                 (w.get("completion_pct") or 0) >= 25 for w in watch_data.values()
             ),
@@ -164,6 +167,7 @@ def build_movies(
     tmdb_data: dict,
     overseerr_requests: list[dict],
     tautulli_movies: dict,
+    transcode_stats: dict | None = None,
 ) -> list[dict]:
     req_by_tmdb: dict[int, dict] = {}
     for r in overseerr_requests:
@@ -222,6 +226,15 @@ def build_movies(
             "size_gb": _gb(item["size_bytes"]),
             "quality_profile_id": item.get("quality_profile_id"),
             "added_at": item.get("added_at"),
+            "file_info": {
+                "video_codec":  item.get("video_codec", ""),
+                "audio_codec":  item.get("audio_codec", ""),
+                "resolution":   item.get("resolution", ""),
+                "bit_depth":    item.get("bit_depth"),
+                "hdr":          item.get("hdr", False),
+                "quality_name": item.get("quality_name", ""),
+            },
+            "transcode_stats": (transcode_stats or {}).get(tmdb_id),
             "request": {
                 "requested": req is not None,
                 "requester_id": req["requester_id"] if req else None,

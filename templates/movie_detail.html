@@ -29,6 +29,16 @@
         {% set delbadge = deletion_badge(item) %}
         <span class="badge {{ delbadge[0] }}">{{ delbadge[1] }}</span>
       </div>
+      {% set fmt_tags = file_format_tags(item) %}
+      {% if fmt_tags %}
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+        {% for label, cls in fmt_tags %}
+          <span class="fmt-tag {{ cls }}">{{ label }}</span>
+        {% endfor %}
+        {% set tl = transcode_label(item) %}
+        {% if tl %}<span class="{{ tl[0] }}" style="margin-left:4px">{{ tl[1] }}</span>{% endif %}
+      </div>
+      {% endif %}
       <div class="genre-tags">
         {% for g in item.genres %}
           <span class="genre-tag">{{ g }}</span>
@@ -164,6 +174,16 @@
             {% if item.year %}<tr><td style="color:var(--text-muted)">Year</td><td>{{ item.year }}</td></tr>{% endif %}
             {% if item.rating %}<tr><td style="color:var(--text-muted)">Rating</td><td>★ {{ "%.1f" | format(item.rating) }}</td></tr>{% endif %}
             <tr><td style="color:var(--text-muted)">Total Plays</td><td>{{ item.total_plays }}</td></tr>
+            {% if item.transcode_stats and item.transcode_stats.total %}
+              {% set ts = item.transcode_stats %}
+              {% set dp = (ts.direct / ts.total * 100) | round | int %}
+              {% set tp = (ts.transcode / ts.total * 100) | round | int %}
+              <tr><td style="color:var(--text-muted)">Direct Play</td><td>{{ dp }}%</td></tr>
+              <tr><td style="color:var(--text-muted)">Transcoded</td><td>{{ tp }}%</td></tr>
+              {% if ts.avg_watch_pct is not none %}
+              <tr><td style="color:var(--text-muted)">Avg Watched</td><td>{{ (ts.avg_watch_pct * 100) | round | int }}%</td></tr>
+              {% endif %}
+            {% endif %}
           </tbody>
         </table>
       </div>

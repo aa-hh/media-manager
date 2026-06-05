@@ -269,6 +269,19 @@ nav ul li a.active {
 .badge.warning    { background: rgba(245,158,11,.15); color: var(--yellow); }
 .badge.safe       { background: rgba(34,197,94,.12);  color: var(--green); }
 
+/* ── File format / transcode tags ──────────────────────────── */
+.fmt-tag { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .04em; }
+.codec-h265 { background: rgba(99,102,241,.18); color: #a5b4fc; }
+.codec-h264 { background: rgba(14,165,233,.15); color: #7dd3fc; }
+.codec-other { background: rgba(148,163,184,.12); color: #94a3b8; }
+.res-4k  { background: rgba(234,179,8,.15); color: #fde047; }
+.res-hd  { background: rgba(148,163,184,.10); color: #94a3b8; }
+.tag-hdr { background: rgba(249,115,22,.15); color: #fb923c; }
+.tag-bit { background: rgba(168,85,247,.15); color: #c4b5fd; }
+.transcode-direct { color: var(--green); font-size: .78rem; font-weight: 600; }
+.transcode-bad    { color: var(--red);   font-size: .78rem; font-weight: 600; }
+.transcode-mixed  { color: var(--yellow);font-size: .78rem; font-weight: 600; }
+
 /* ── Detail page ────────────────────────────────────────────── */
 .detail-hero {
   position: relative;

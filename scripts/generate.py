@@ -96,6 +96,43 @@ def _make_env(templates_dir: Path) -> Environment:
         else:
             return ("never", f"{name} never watched")
 
+    def file_format_tags(item):
+        """Returns list of (label, css_class) tuples for file format badges."""
+        fi = item.get("file_info") or {}
+        tags = []
+        codec = fi.get("video_codec") or ""
+        res   = fi.get("resolution") or ""
+        hdr   = fi.get("hdr", False)
+        depth = fi.get("bit_depth")
+        if codec:
+            cls = "codec-h265" if codec in ("H.265", "AV1") else "codec-h264" if codec == "H.264" else "codec-other"
+            tags.append((codec, cls))
+        if res:
+            tags.append((res, "res-4k" if "4K" in res else "res-hd"))
+        if hdr:
+            tags.append(("HDR", "tag-hdr"))
+        if depth and int(depth) >= 10:
+            tags.append(("10-bit", "tag-bit"))
+        # TV shows: use quality profile name
+        qp = item.get("quality_profile_name") or ""
+        if not tags and qp:
+            tags.append((qp, "codec-other"))
+        return tags
+
+    def transcode_label(item):
+        """Returns (css_class, label) or None if no transcode data."""
+        ts = item.get("transcode_stats")
+        if not ts or not ts.get("total"):
+            return None
+        total = ts["total"]
+        direct_pct = round(ts.get("direct", 0) / total * 100)
+        transcode_pct = round(ts.get("transcode", 0) / total * 100)
+        if direct_pct >= 90:
+            return ("transcode-direct", f"Direct Play")
+        if transcode_pct >= 50:
+            return ("transcode-bad", f"Transcodes {transcode_pct}%")
+        return ("transcode-mixed", f"{direct_pct}% Direct")
+
     def deletion_badge(item):
         d = item.get("deletion", {})
         rec = d.get("recommendation", "keep")
@@ -121,6 +158,8 @@ def _make_env(templates_dir: Path) -> Environment:
     env.globals["requester_status_label"] = requester_status_label
     env.globals["deletion_badge"] = deletion_badge
     env.globals["top_genres"] = top_genres
+    env.globals["file_format_tags"] = file_format_tags
+    env.globals["transcode_label"] = transcode_label
     _now = datetime.now()
     env.globals["now"] = _now.strftime("%Y-%m-%d %H:%M")
     env.globals["now_ts"] = int(_now.timestamp())
