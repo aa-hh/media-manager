@@ -1,4 +1,7 @@
+import asyncio
 import os
+import re
+import subprocess
 import json
 from pathlib import Path
 from secrets import compare_digest
@@ -21,7 +24,16 @@ COOKIE_SESSION = "mm_session"
 PUBLIC_DIR = Path(os.environ.get("PUBLIC_DIR", "/app/public"))
 CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "/app/config"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
+PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/app/project"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
+
+PIPELINE_JOBS = [
+    {"id": "collect",  "name": "Collect",          "description": "Fetch data from all configured services"},
+    {"id": "generate", "name": "Generate",          "description": "Regenerate dashboard HTML from cached data"},
+    {"id": "all",      "name": "Collect + Generate","description": "Full pipeline: collect then generate"},
+]
+_running_jobs: dict[str, bool] = {}
+_jobs_lock = asyncio.Lock()
 SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
 SEERR_KEY = os.environ.get("SEERR_API_KEY") or os.environ.get("HOMEPAGE_VAR_SEERR_API_KEY", "")
 def _is_setup_complete() -> bool:
@@ -407,7 +419,15 @@ async def settings_save_users(request: Request):
     return JSONResponse({"ok": True})
 
 
-# ── Setup wizard ─────────────────────────────────────────────────────────────
+# ── Settings + Setup pages ────────────────────────────────────────────────────
+
+@app.get("/settings")
+async def settings_page_route():
+    html_path = Path(__file__).parent / "settings.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404)
+    return HTMLResponse(html_path.read_text())
+
 
 @app.get("/setup")
 async def setup_page():
@@ -593,44 +613,86 @@ async def settings_get_services():
     })
 
 
+def _last_run_time(job_id: str) -> str | None:
+    """Parse media_manager.log for the last completed run of a job."""
+    log_path = PROJECT_DIR / "logs" / "media_manager.log"
+    if not log_path.exists():
+        return None
+    collect_marker = "=== Collect phase started ==="
+    generate_marker = "=== Generate phase started ==="
+    done_marker = "Done in"
+    ts_pattern = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]")
+
+    lines = log_path.read_text(errors="replace").splitlines()
+    last_started_ts: str | None = None
+    last_done_ts: str | None = None
+
+    for line in lines:
+        m = ts_pattern.match(line)
+        if not m:
+            continue
+        ts = m.group(1)
+        if job_id == "all":
+            if collect_marker in line:
+                last_started_ts = ts
+            if done_marker in line and last_started_ts:
+                last_done_ts = ts
+        elif job_id == "collect":
+            if collect_marker in line:
+                last_started_ts = ts
+            if "=== Collect phase complete ===" in line:
+                last_done_ts = ts
+        elif job_id == "generate":
+            if generate_marker in line:
+                last_started_ts = ts
+            if "=== Generate phase complete ===" in line:
+                last_done_ts = ts
+
+    return last_done_ts
+
+
 @app.get("/api/settings/jobs")
 async def settings_get_jobs():
-    """Proxy Seerr jobs list."""
-    cfg = _read_config_env()
-    seerr_url = cfg.get("SEERR_URL", "").rstrip("/")
-    seerr_key = cfg.get("SEERR_API_KEY", "")
-    if not seerr_url or not seerr_key:
-        return JSONResponse({"error": "Overseerr not configured."}, status_code=503)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f"{seerr_url}/api/v1/settings/jobs",
-                headers={"X-Api-Key": seerr_key},
-            )
-            r.raise_for_status()
-            return JSONResponse(r.json())
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=502)
+    """List pipeline jobs with running state and last-run time."""
+    async with _jobs_lock:
+        running_snapshot = dict(_running_jobs)
+    jobs = []
+    for j in PIPELINE_JOBS:
+        jid = j["id"]
+        jobs.append({
+            **j,
+            "running": running_snapshot.get(jid, False),
+            "lastRun": _last_run_time(jid),
+        })
+    return JSONResponse(jobs)
 
 
 @app.post("/api/settings/jobs/{job_id}/run")
 async def settings_run_job(job_id: str):
-    """Trigger a Seerr job immediately."""
-    cfg = _read_config_env()
-    seerr_url = cfg.get("SEERR_URL", "").rstrip("/")
-    seerr_key = cfg.get("SEERR_API_KEY", "")
-    if not seerr_url or not seerr_key:
-        return JSONResponse({"error": "Overseerr not configured."}, status_code=503)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{seerr_url}/api/v1/settings/jobs/{job_id}/run",
-                headers={"X-Api-Key": seerr_key},
+    """Trigger a pipeline job in the background."""
+    if job_id not in {j["id"] for j in PIPELINE_JOBS}:
+        return JSONResponse({"error": "Unknown job."}, status_code=404)
+    async with _jobs_lock:
+        if _running_jobs.get(job_id):
+            return JSONResponse({"error": "Job already running."}, status_code=409)
+        _running_jobs[job_id] = True
+
+    async def _run():
+        try:
+            script = PROJECT_DIR / "scripts" / "run.py"
+            proc = await asyncio.create_subprocess_exec(
+                "python", str(script), job_id,
+                cwd=str(PROJECT_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
             )
-            r.raise_for_status()
-            return JSONResponse({"ok": True})
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=502)
+            await proc.communicate()
+        finally:
+            async with _jobs_lock:
+                _running_jobs[job_id] = False
+
+    asyncio.create_task(_run())
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/settings/config")

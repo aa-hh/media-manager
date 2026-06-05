@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Media Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/style.css">
+  <style>
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin: 0 0 28px;
+      padding: 0 32px;
+    }
+    .tab-bar__item {
+      padding: 12px 20px;
+      font-size: .9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+      user-select: none;
+    }
+    .tab-bar__item:hover { color: var(--text); }
+    .tab-bar__item.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Shared card/form styles ── */
+    .settings-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .settings-section__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-section__title { font-size: .95rem; font-weight: 600; }
+    .settings-section__subtitle { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+
+    .settings-section__body { padding: 20px 24px; }
+
+    /* ── Mapping table ── */
+    .mapping-table { width: 100%; border-collapse: collapse; }
+    .mapping-table th {
+      text-align: left; padding: 12px 24px;
+      font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg3);
+    }
+    .mapping-table td { padding: 14px 24px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: .9rem; }
+    .mapping-table tr:last-child td { border-bottom: none; }
+    .mapping-table tr.edit-row td { background: var(--bg3); padding: 16px 24px; }
+    .plex-chip { display: inline-block; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; font-size: .8rem; color: var(--text); margin: 2px 3px 2px 0; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 8px; font-size: .85rem;
+      font-weight: 500; cursor: pointer; border: none; transition: opacity .15s, background .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .btn--primary { background: var(--accent); color: #fff; }
+    .btn--ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn--ghost:hover { color: var(--text); border-color: var(--text-muted); opacity: 1; }
+    .btn--danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
+    .btn--icon { padding: 6px 8px; background: transparent; color: var(--text-muted); border: 1px solid transparent; }
+    .btn--icon:hover { color: var(--text); border-color: var(--border); opacity: 1; background: var(--bg3); }
+    .btn--test { background: var(--bg3); border: 1px solid var(--border); color: #93c5fd; font-size: .8rem; padding: 6px 12px; white-space: nowrap; }
+    .btn--test:hover { background: var(--surface); opacity: 1; }
+    .btn--sm { padding: 5px 10px; font-size: .8rem; }
+
+    /* ── Forms ── */
+    .form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+    .form-group--grow { flex: 1; min-width: 160px; }
+    .form-label { font-size: .75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .form-input, .form-select {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 12px; color: var(--text); font-size: .9rem; font-family: inherit;
+      outline: none; transition: border-color .15s; width: 100%;
+    }
+    .form-input:focus, .form-select:focus { border-color: var(--accent); }
+    .form-select option { background: var(--bg2); }
+
+    /* ── Service rows ── */
+    .svc-row {
+      display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+      padding: 14px 0; border-bottom: 1px solid var(--border);
+    }
+    .svc-row:last-of-type { border-bottom: none; padding-bottom: 0; }
+    .svc-row:first-of-type { padding-top: 0; }
+    .svc-row .form-group--url { flex: 2; min-width: 200px; }
+    .svc-row .form-group--key { flex: 1; min-width: 160px; }
+    .test-result { font-size: .78rem; padding: 4px 10px; border-radius: 6px; white-space: nowrap; align-self: flex-end; margin-bottom: 1px; }
+    .test-result--ok  { background: #14291a; color: var(--green); }
+    .test-result--err { background: #2a1414; color: var(--red); }
+    .test-result--checking { background: var(--bg3); color: var(--text-muted); }
+
+    .add-instance-btn {
+      width: 100%; margin-top: 12px; padding: 8px;
+      background: transparent; border: 1px dashed var(--border); border-radius: 8px;
+      color: var(--text-muted); font-size: .82rem; cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .add-instance-btn:hover { border-color: var(--text-muted); color: var(--text); }
+
+    .remove-row-btn { align-self: flex-end; margin-bottom: 2px; }
+
+    /* ── Library assignment ── */
+    .lib-assign { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .lib-assign-title { font-size: .8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 12px; }
+    .lib-assign-row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .lib-assign-row .form-group { flex: 1; min-width: 180px; }
+
+    /* ── SSL toggle ── */
+    .toggle-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; }
+    .toggle-row label { font-size: .9rem; cursor: pointer; }
+    .toggle-row .form-label { text-transform: none; letter-spacing: 0; font-size: .9rem; margin: 0; }
+    .toggle { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle__slider { position: absolute; inset: 0; cursor: pointer; background: var(--border); border-radius: 22px; transition: background .2s; }
+    .toggle__slider::before { content: ''; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
+    .toggle input:checked + .toggle__slider { background: var(--accent); }
+    .toggle input:checked + .toggle__slider::before { transform: translateX(18px); }
+
+    /* ── Toast / misc ── */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 18px; font-size: .875rem; color: var(--text);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4); opacity: 0; transform: translateY(8px);
+      transition: opacity .2s, transform .2s; z-index: 100; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast--ok  { border-color: var(--green); color: var(--green); }
+    .toast--err { border-color: var(--red); color: var(--red); }
+
+    .empty-row td { text-align: center; color: var(--text-muted); padding: 32px; font-size: .9rem; }
+    .new-mapping-form { padding: 20px 24px; border-top: 1px solid var(--border); display: none; }
+    .new-mapping-form.open { display: block; }
+    .actions-cell { display: flex; gap: 4px; }
+    .plex-name-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+    .plex-name-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px 3px 12px; font-size: .82rem; }
+    .plex-name-tag button { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 0; line-height: 1; display: flex; align-items: center; }
+    .plex-name-tag button:hover { color: var(--red); }
+    .add-plex-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    .add-plex-row .form-select { flex: 1; }
+    .name-input { min-width: 140px; }
+
+    .save-bar { padding: 24px 32px 0; display: flex; gap: 12px; align-items: center; }
+    .save-note { font-size: .82rem; color: var(--text-muted); }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Service cards ── */
+    .svc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      padding: 24px 32px;
+    }
+    .svc-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .svc-card:hover { border-color: #3e4a6a; }
+    .svc-card.expanded { border-color: var(--accent); }
+
+    .svc-card__summary {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 20px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .svc-card__icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .svc-card__icon img { width: 26px; height: 26px; object-fit: contain; }
+    .svc-card__icon svg { width: 22px; height: 22px; color: var(--text-muted); }
+    .svc-card__info { flex: 1; min-width: 0; }
+    .svc-card__name { font-weight: 600; font-size: .95rem; }
+    .svc-card__url {
+      font-size: .78rem; color: var(--text-muted); margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .svc-card__status {
+      display: flex; align-items: center; gap: 5px;
+      font-size: .75rem; margin-top: 4px;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .status-dot--ok   { background: var(--green); }
+    .status-dot--warn { background: var(--yellow); }
+    .status-dot--off  { background: var(--border); }
+
+    .svc-card__chevron {
+      color: var(--text-muted); flex-shrink: 0;
+      transition: transform .2s;
+    }
+    .svc-card.expanded .svc-card__chevron { transform: rotate(180deg); }
+
+    .svc-card__form {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 18px 20px;
+      background: var(--bg3);
+    }
+    .svc-card.expanded .svc-card__form { display: block; }
+
+    .svc-form-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+    .svc-form-row:last-child { margin-bottom: 0; }
+    .svc-form-row .form-group { flex: 1; min-width: 140px; }
+    .svc-form-row .form-group--url { flex: 2; }
+
+    .instance-block { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: var(--bg2); }
+    .instance-block__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: .8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+    .svc-card__footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; border-top: 1px solid var(--border);
+      background: var(--bg2);
+    }
+
+    .general-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 24px 32px; }
+    .general-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+    .general-card__title { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+    .general-card__desc { font-size: .8rem; color: var(--text-muted); margin-bottom: 14px; }
+
+    /* ── Jobs ── */
+    .job-type { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: .06em; }
+    .job-type--process { background: #1a1f3a; color: #818cf8; }
+    .job-type--command { background: #1a2e1a; color: #86efac; }
+    .job-running td { opacity: .6; }
+    .btn--run { background: var(--accent); color: #fff; font-size: .8rem; padding: 5px 12px; }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+  <nav>
+    <div class="nav-logo">
+      <img src="/assets/favicon.svg" alt="" class="nav-app-icon">
+      Media<span>Manager</span>
+    </div>
+    <ul>
+      <li><a href="/">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard</a></li>
+      <li><a href="/tv/index.html">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 2l-4 5-4-5"/></svg>
+        TV Shows</a></li>
+      <li><a href="/movies/index.html">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M17 7h5M2 17h5M17 17h5"/></svg>
+        Movies</a></li>
+      <li><a href="/users/index.html">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Users</a></li>
+      <li><a href="/services/index.html">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        Services</a></li>
+      <li><a href="/settings" class="active">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings</a></li>
+    </ul>
+  </nav>
+
+  <div class="main">
+    <div class="page-header">
+      <h1>Settings</h1>
+      <p>Manage connected services and user mappings.</p>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <div class="tab-bar__item active" onclick="switchTab('services')">Services</div>
+      <div class="tab-bar__item" onclick="switchTab('jobs')">Jobs</div>
+      <div class="tab-bar__item" onclick="switchTab('users')">User Mappings</div>
+    </div>
+
+    <!-- ── Services tab ── -->
+    <div class="tab-panel active" id="tab-services">
+
+      <!-- Service cards grid -->
+      <div class="svc-grid" id="svc-cards-grid">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- General settings -->
+      <div class="general-grid">
+        <div class="general-card">
+          <div class="general-card__title">Storage capacity</div>
+          <div class="general-card__desc">Total disk space in GB — used for forecasting charts.</div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <input type="number" class="form-input" id="storage-gb" placeholder="e.g. 4096" min="1" style="max-width:160px">
+            <span style="font-size:.85rem;color:var(--text-muted)">GB</span>
+          </div>
+        </div>
+        <div class="general-card">
+          <div class="general-card__title">SSL verification</div>
+          <div class="general-card__desc">Disable only if your services use self-signed certificates.</div>
+          <div class="toggle-row" style="margin-top:0">
+            <label class="toggle">
+              <input type="checkbox" id="verify-ssl" checked>
+              <span class="toggle__slider"></span>
+            </label>
+            <span style="font-size:.875rem" id="ssl-label">Verify SSL certificates</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn btn--primary" id="save-svc-btn" onclick="saveServices()">Save changes</button>
+        <span class="save-note" id="save-note"></span>
+      </div>
+
+      <footer style="padding:32px"><span>Media Manager</span></footer>
+    </div><!-- #tab-services -->
+
+    <!-- ── Jobs tab ── -->
+    <div class="tab-panel" id="tab-jobs">
+      <div class="content">
+        <div class="settings-section">
+          <div class="settings-section__header">
+            <div>
+              <div class="settings-section__title">Overseerr Jobs</div>
+              <div class="settings-section__subtitle">Scheduled maintenance tasks. Running a job manually won't affect its schedule.</div>
+            </div>
+            <button class="btn btn--ghost btn--sm" onclick="loadJobs()">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Refresh
+            </button>
+          </div>
+          <table class="mapping-table" id="jobs-table">
+            <thead>
+              <tr>
+                <th>Job name</th>
+                <th>Type</th>
+                <th>Next execution</th>
+                <th style="width:120px"></th>
+              </tr>
+            </thead>
+            <tbody id="jobs-tbody">
+              <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <footer style="padding:32px"><span>Media Manager</span></footer>
+    </div><!-- #tab-jobs -->
+
+    <!-- ── Users tab ── -->
+    <div class="tab-panel" id="tab-users">
+      <div class="content">
+        <div class="settings-section">
+          <div class="settings-section__header">
+            <div>
+              <div class="settings-section__title">User Mappings</div>
+              <div class="settings-section__subtitle">Map Plex display names to Overseerr accounts</div>
+            </div>
+            <button class="btn btn--primary" onclick="openNewMapping()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add mapping
+            </button>
+          </div>
+          <table class="mapping-table">
+            <thead>
+              <tr>
+                <th>Canonical name</th>
+                <th>Plex name(s)</th>
+                <th>Overseerr user</th>
+                <th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="mapping-tbody">
+              <tr><td colspan="4" class="empty-row" id="loading-row">Loading…</td></tr>
+            </tbody>
+          </table>
+          <div class="new-mapping-form" id="new-mapping-form">
+            <div style="font-size:.85rem;font-weight:600;margin-bottom:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">New mapping</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Canonical name</label>
+                <input type="text" class="form-input name-input" id="new-name" placeholder="e.g. Alice">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Plex display name</label>
+                <select class="form-select" id="new-plex-select" style="min-width:200px">
+                  <option value="">— select or type —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Overseerr user</label>
+                <select class="form-select" id="new-seerr-select" style="min-width:200px">
+                  <option value="">— select user —</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;padding-bottom:1px">
+                <button class="btn btn--primary" onclick="submitNewMapping()">Save</button>
+                <button class="btn btn--ghost" onclick="closeNewMapping()">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer style="padding:32px"><span>Media Manager</span></footer>
+    </div><!-- #tab-users -->
+
+  </div><!-- .main -->
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Utilities ────────────────────────────────────────────────────────────────
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+let toastTimer;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast toast--${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+const TABS = ['services', 'jobs', 'users'];
+function switchTab(name) {
+  document.querySelectorAll('.tab-bar__item').forEach(el => {
+    const t = el.textContent.trim().toLowerCase();
+    el.classList.toggle('active', t.startsWith(name.slice(0, 4)));
+  });
+  TABS.forEach(t => {
+    const el = document.getElementById(`tab-${t}`);
+    if (el) el.classList.toggle('active', t === name);
+  });
+  if (name === 'jobs') loadJobs();
+}
+
+// ── Services tab ─────────────────────────────────────────────────────────────
+const svcState = { sonarr: [], radarr: [], cfg: {} };
+
+const SVC_DEFS = [
+  { id: 'sonarr',   label: 'Sonarr',          desc: 'TV library',                    icon: '../assets/icons/sonarr.svg',  multi: true,  hasUrl: true },
+  { id: 'radarr',   label: 'Radarr',          desc: 'Movie library',                 icon: '../assets/icons/radarr.svg',  multi: true,  hasUrl: true },
+  { id: 'plex',     label: 'Plex',            desc: 'Watch history & user data',     icon: '../assets/icons/plex.svg',    multi: false, hasUrl: true  },
+  { id: 'tmdb',     label: 'TMDB',            desc: 'Posters, ratings & overviews',  icon: '../assets/icons/tmdb.svg',    multi: false, hasUrl: false },
+  { id: 'seerr',    label: 'Overseerr',       desc: 'Requests & watchlists',         icon: '../assets/icons/seerr.svg',   multi: false, hasUrl: true  },
+  { id: 'tautulli', label: 'Tautulli',        desc: 'Enhanced watch stats',          icon: null,                          multi: false, hasUrl: true  },
+];
+
+function tautulliIcon() {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`;
+}
+
+function cardStatusDot(svcId) {
+  const cfg = svcState.cfg;
+  let configured = false;
+  if (svcId === 'sonarr') configured = !!(svcState.sonarr[0]?.url);
+  else if (svcId === 'radarr') configured = !!(svcState.radarr[0]?.url);
+  else if (svcId === 'tmdb') configured = !!(cfg.TMDB_API_KEY);
+  else if (svcId === 'plex') configured = !!(cfg.PLEX_URL);
+  else if (svcId === 'seerr') configured = !!(cfg.SEERR_URL);
+  else if (svcId === 'tautulli') configured = !!(cfg.TAUTULLI_URL);
+  return configured
+    ? `<span class="status-dot status-dot--ok"></span><span style="color:var(--green)">Configured</span>`
+    : `<span class="status-dot status-dot--off"></span><span style="color:var(--text-muted)">Not configured</span>`;
+}
+
+function cardUrl(svcId) {
+  const cfg = svcState.cfg;
+  if (svcId === 'sonarr') return svcState.sonarr.filter(s=>s.url).map(s=>s.url).join(', ') || '';
+  if (svcId === 'radarr') return svcState.radarr.filter(s=>s.url).map(s=>s.url).join(', ') || '';
+  if (svcId === 'tmdb') return cfg.TMDB_API_KEY ? 'api.themoviedb.org' : '';
+  if (svcId === 'plex') return cfg.PLEX_URL || '';
+  if (svcId === 'seerr') return cfg.SEERR_URL || '';
+  if (svcId === 'tautulli') return cfg.TAUTULLI_URL || '';
+  return '';
+}
+
+function renderServiceCards() {
+  const grid = document.getElementById('svc-cards-grid');
+  grid.innerHTML = '';
+  SVC_DEFS.forEach(def => {
+    const card = document.createElement('div');
+    card.className = 'svc-card';
+    card.id = `svc-card-${def.id}`;
+    const url = cardUrl(def.id);
+
+    card.innerHTML = `
+      <div class="svc-card__summary" onclick="toggleCard('${def.id}')">
+        <div class="svc-card__icon">
+          ${def.icon ? `<img src="${def.icon}" alt="${def.label}">` : tautulliIcon()}
+        </div>
+        <div class="svc-card__info">
+          <div class="svc-card__name">${def.label}</div>
+          <div class="svc-card__url">${url ? esc(url) : def.desc}</div>
+          <div class="svc-card__status">${cardStatusDot(def.id)}</div>
+        </div>
+        <svg class="svc-card__chevron" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="svc-card__form" id="svc-form-${def.id}">
+        ${buildFormHTML(def)}
+      </div>`;
+
+    grid.appendChild(card);
+  });
+}
+
+function buildFormHTML(def) {
+  const cfg = svcState.cfg;
+  if (def.id === 'sonarr' || def.id === 'radarr') {
+    const arr = def.id === 'sonarr' ? svcState.sonarr : svcState.radarr;
+    const instancesHTML = arr.map((inst, i) => `
+      <div class="instance-block" id="${def.id}-instance-${i}">
+        <div class="instance-block__header">
+          ${arr.length > 1 ? `Instance ${i + 1}` : 'Connection'}
+          ${i > 0 ? `<button class="btn btn--icon btn--sm" onclick="removeInstance('${def.id}', ${i})" title="Remove"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
+        </div>
+        <div class="svc-form-row">
+          <div class="form-group form-group--url">
+            <label class="form-label">URL</label>
+            <input type="text" class="form-input" id="${def.id}-url-${i}" placeholder="http://…" value="${esc(inst.url)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">API Key</label>
+            <input type="password" class="form-input" id="${def.id}-key-${i}" placeholder="API key" autocomplete="off" value="${esc(inst.key)}">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+          <button class="btn btn--test" onclick="testArr('${def.id}', ${i})">Test connection</button>
+          <span class="test-result" id="${def.id}-result-${i}"></span>
+        </div>
+      </div>`).join('');
+
+    return `${instancesHTML}
+      <button class="add-instance-btn" onclick="addInstance('${def.id}')">+ Add another ${def.label} instance</button>`;
+  }
+
+  if (def.id === 'plex') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">Server URL</label>
+          <input type="text" class="form-input" id="plex-url" placeholder="https://…:32400" value="${esc(cfg.PLEX_URL || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Token</label>
+          <input type="password" class="form-input" id="plex-token" placeholder="Plex token" autocomplete="off" value="${esc(cfg.PLEX_TOKEN || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin:10px 0">
+        <button class="btn btn--test" onclick="testPlexAndLoadLibraries()">Test connection</button>
+        <span class="test-result" id="plex-result"></span>
+      </div>
+      <div class="lib-assign" id="lib-assign" ${(cfg.PLEX_URL) ? '' : 'style="display:none"'}>
+        <div class="lib-assign-title">Library assignment</div>
+        <div class="lib-assign-row">
+          <div class="form-group">
+            <label class="form-label">TV Shows</label>
+            <select class="form-select" id="lib-tv"><option value="">— test to load —</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Movies</label>
+            <select class="form-select" id="lib-movie"><option value="">— test to load —</option></select>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  if (def.id === 'tmdb') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="tmdb-key" placeholder="TMDB API key" autocomplete="off" value="${esc(cfg.TMDB_API_KEY || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testTmdb()">Test connection</button>
+        <span class="test-result" id="tmdb-result"></span>
+      </div>
+      <p style="font-size:.78rem;color:var(--text-muted);margin-top:10px">Free API key available at <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a></p>`;
+  }
+
+  if (def.id === 'seerr') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="seerr-url" placeholder="https://…" value="${esc(cfg.SEERR_URL || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="seerr-key" placeholder="API key" autocomplete="off" value="${esc(cfg.SEERR_API_KEY || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testSvc('overseerr', document.getElementById('seerr-url').value, null, document.getElementById('seerr-key').value, 'seerr-result')">Test connection</button>
+        <span class="test-result" id="seerr-result"></span>
+      </div>`;
+  }
+
+  if (def.id === 'tautulli') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="tautulli-url" placeholder="http://localhost:8181" value="${esc(cfg.TAUTULLI_URL || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="tautulli-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TAUTULLI_API_KEY || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testSvc('tautulli', document.getElementById('tautulli-url').value, null, document.getElementById('tautulli-key').value, 'tautulli-result')">Test connection</button>
+        <span class="test-result" id="tautulli-result"></span>
+      </div>`;
+  }
+  return '';
+}
+
+function toggleCard(svcId) {
+  const card = document.getElementById(`svc-card-${svcId}`);
+  card.classList.toggle('expanded');
+}
+
+function addInstance(svcId) {
+  syncInstancesToState(svcId);
+  const arr = svcId === 'sonarr' ? svcState.sonarr : svcState.radarr;
+  arr.push({ url: '', key: '' });
+  renderServiceCards();
+  document.getElementById(`svc-card-${svcId}`).classList.add('expanded');
+}
+
+function removeInstance(svcId, idx) {
+  syncInstancesToState(svcId);
+  const arr = svcId === 'sonarr' ? svcState.sonarr : svcState.radarr;
+  arr.splice(idx, 1);
+  renderServiceCards();
+  document.getElementById(`svc-card-${svcId}`).classList.add('expanded');
+}
+
+function syncInstancesToState(svcId) {
+  const arr = svcId === 'sonarr' ? svcState.sonarr : svcState.radarr;
+  arr.forEach((_, i) => {
+    const u = document.getElementById(`${svcId}-url-${i}`);
+    const k = document.getElementById(`${svcId}-key-${i}`);
+    if (u) arr[i].url = u.value.trim();
+    if (k) arr[i].key = k.value.trim();
+  });
+}
+
+async function testArr(svcId, idx) {
+  syncInstancesToState(svcId);
+  const arr = svcId === 'sonarr' ? svcState.sonarr : svcState.radarr;
+  await testSvc(svcId, arr[idx]?.url || '', idx, arr[idx]?.key || '', `${svcId}-result-${idx}`);
+}
+
+async function testTmdb() {
+  const key = document.getElementById('tmdb-key').value.trim();
+  await testSvc('tmdb', null, null, key, 'tmdb-result');
+}
+
+async function testSvc(svcId, url, idx, key, resultId) {
+  const el = document.getElementById(resultId);
+  if (!el) return;
+  el.className = 'test-result test-result--checking';
+  el.innerHTML = '<span class="spinner"></span>checking…';
+  try {
+    const r = await fetch('/api/setup/test-service', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: svcId, url, key }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      el.className = 'test-result test-result--ok';
+      el.textContent = (data.version || '✓') + ' ✓';
+    } else {
+      el.className = 'test-result test-result--err';
+      el.textContent = data.error || 'Failed';
+    }
+  } catch {
+    el.className = 'test-result test-result--err';
+    el.textContent = 'Request failed';
+  }
+}
+
+async function testPlexAndLoadLibraries() {
+  const url = document.getElementById('plex-url').value.trim();
+  const token = document.getElementById('plex-token').value.trim();
+  await testSvc('plex', url, null, token, 'plex-result');
+  const resultEl = document.getElementById('plex-result');
+  if (!resultEl.classList.contains('test-result--ok')) return;
+  try {
+    const r = await fetch('/api/setup/plex-libraries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, token }),
+    });
+    const data = await r.json();
+    if (data.libraries) {
+      populateLibrarySelects(data.libraries);
+      document.getElementById('lib-assign').style.display = 'block';
+    }
+  } catch {}
+}
+
+function populateLibrarySelects(libraries) {
+  const tvSel = document.getElementById('lib-tv');
+  const movieSel = document.getElementById('lib-movie');
+  const currentTv = tvSel.value;
+  const currentMovie = movieSel.value;
+  const opts = libraries.map(l => `<option value="${esc(l.id)}">${esc(l.title)} (${esc(l.type)})</option>`).join('');
+  tvSel.innerHTML = opts;
+  movieSel.innerHTML = opts;
+  if (currentTv && tvSel.querySelector(`option[value="${currentTv}"]`)) tvSel.value = currentTv;
+  else { const tv = libraries.find(l => l.type === 'show'); if (tv) tvSel.value = tv.id; }
+  if (currentMovie && movieSel.querySelector(`option[value="${currentMovie}"]`)) movieSel.value = currentMovie;
+  else { const mv = libraries.find(l => l.type === 'movie'); if (mv) movieSel.value = mv.id; }
+}
+
+async function loadServices() {
+  try {
+    const r = await fetch('/api/settings/services');
+    const d = await r.json();
+    svcState.cfg = d;
+
+    const sonarrUrls = d.SONARR_URL ? d.SONARR_URL.split(',').map(s => s.trim()).filter(Boolean) : [''];
+    const sonarrKeys = d.SONARR_API_KEY ? d.SONARR_API_KEY.split(',').map(s => s.trim()) : [];
+    svcState.sonarr = sonarrUrls.map((url, i) => ({ url, key: sonarrKeys[i] || '' }));
+    if (!svcState.sonarr.length) svcState.sonarr = [{ url: '', key: '' }];
+
+    const radarrUrls = d.RADARR_URL ? d.RADARR_URL.split(',').map(s => s.trim()).filter(Boolean) : [''];
+    const radarrKeys = d.RADARR_API_KEY ? d.RADARR_API_KEY.split(',').map(s => s.trim()) : [];
+    svcState.radarr = radarrUrls.map((url, i) => ({ url, key: radarrKeys[i] || '' }));
+    if (!svcState.radarr.length) svcState.radarr = [{ url: '', key: '' }];
+
+    renderServiceCards();
+
+    document.getElementById('storage-gb').value = d.STORAGE_CAPACITY_GB || '';
+    document.getElementById('verify-ssl').checked = d.VERIFY_SSL !== 'false';
+
+    // If Plex is configured, try loading libraries silently
+    if (d.PLEX_URL && d.PLEX_TOKEN) {
+      try {
+        const lr = await fetch('/api/setup/plex-libraries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: d.PLEX_URL, token: d.PLEX_TOKEN }),
+        });
+        const ld = await lr.json();
+        if (ld.libraries) {
+          populateLibrarySelects(ld.libraries);
+          const tvSections = (d.PLEX_TV_SECTIONS || '').split(',').map(s => s.trim());
+          const mvSections = (d.PLEX_MOVIE_SECTIONS || '').split(',').map(s => s.trim());
+          if (tvSections[0]) document.getElementById('lib-tv').value = tvSections[0];
+          if (mvSections[0]) document.getElementById('lib-movie').value = mvSections[0];
+          document.getElementById('lib-assign').style.display = 'block';
+        }
+      } catch {}
+    }
+  } catch {
+    toast('Failed to load service config.', 'err');
+  }
+}
+
+async function saveServices() {
+  // Sync multi-instance state from DOM
+  syncInstancesToState('sonarr');
+  syncInstancesToState('radarr');
+
+  const btn = document.getElementById('save-svc-btn');
+  const note = document.getElementById('save-note');
+  btn.disabled = true;
+  note.innerHTML = '<span class="spinner"></span>Saving…';
+
+  const sonarrUrls = svcState.sonarr.filter(s => s.url).map(s => s.url);
+  const sonarrKeys = svcState.sonarr.filter(s => s.url).map(s => s.key);
+  const radarrUrls = svcState.radarr.filter(s => s.url).map(s => s.url);
+  const radarrKeys = svcState.radarr.filter(s => s.url).map(s => s.key);
+
+  const body = {
+    SONARR_URL:          sonarrUrls.join(','),
+    SONARR_API_KEY:      sonarrKeys.join(','),
+    RADARR_URL:          radarrUrls.join(','),
+    RADARR_API_KEY:      radarrKeys.join(','),
+    TMDB_API_KEY:        document.getElementById('tmdb-key')?.value.trim() || '',
+    PLEX_URL:            document.getElementById('plex-url')?.value.trim() || '',
+    PLEX_TOKEN:          document.getElementById('plex-token')?.value.trim() || '',
+    PLEX_TV_SECTIONS:    document.getElementById('lib-tv')?.value || '',
+    PLEX_MOVIE_SECTIONS: document.getElementById('lib-movie')?.value || '',
+    SEERR_URL:           document.getElementById('seerr-url')?.value.trim() || '',
+    SEERR_API_KEY:       document.getElementById('seerr-key')?.value.trim() || '',
+    TAUTULLI_URL:        document.getElementById('tautulli-url')?.value.trim() || '',
+    TAUTULLI_API_KEY:    document.getElementById('tautulli-key')?.value.trim() || '',
+    STORAGE_CAPACITY_GB: document.getElementById('storage-gb').value.trim(),
+    VERIFY_SSL:          document.getElementById('verify-ssl').checked ? 'true' : 'false',
+  };
+
+  Object.keys(body).forEach(k => { if (!body[k]) delete body[k]; });
+
+  try {
+    const r = await fetch('/api/settings/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      toast('Saved.', 'ok');
+      note.textContent = '';
+      // Update cfg and re-render status dots
+      svcState.cfg = { ...svcState.cfg, ...body };
+      renderServiceCards();
+    } else {
+      toast(data.detail || 'Save failed.', 'err');
+      note.textContent = '';
+    }
+  } catch {
+    toast('Save failed.', 'err');
+    note.textContent = '';
+  }
+  btn.disabled = false;
+}
+
+// ── Users tab ─────────────────────────────────────────────────────────────────
+let userState = { mappings: [], seerrUsers: [], allPlexNames: [], unmappedPlexNames: [], editingIdx: null };
+
+async function loadUsers() {
+  try {
+    const r = await fetch('/api/settings/data');
+    const data = await r.json();
+    userState.mappings = data.user_mappings || [];
+    userState.seerrUsers = data.seerr_users || [];
+    userState.allPlexNames = data.all_plex_names || [];
+    userState.unmappedPlexNames = data.unmapped_plex_names || [];
+    renderTable();
+    populateNewForm();
+  } catch {
+    document.getElementById('loading-row').textContent = 'Failed to load settings.';
+  }
+}
+
+function seerrName(id) {
+  const u = userState.seerrUsers.find(u => u.id === id);
+  return u ? u.displayName : (id ? `ID ${id}` : '—');
+}
+
+function renderTable() {
+  const tbody = document.getElementById('mapping-tbody');
+  if (!userState.mappings.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No mappings yet. Add one above.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = userState.mappings.map((m, i) =>
+    userState.editingIdx === i ? renderEditRow(m, i) : renderViewRow(m, i)
+  ).join('');
+}
+
+function renderViewRow(m, i) {
+  const plexChips = (m.plex_names || []).map(n => `<span class="plex-chip">${esc(n)}</span>`).join('') || '<span style="color:var(--text-muted);font-size:.82rem">none</span>';
+  return `<tr>
+    <td>${esc(m.name)}</td><td>${plexChips}</td><td>${esc(seerrName(m.seerr_id))}</td>
+    <td><div class="actions-cell">
+      <button class="btn btn--icon" title="Edit" onclick="startEdit(${i})">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button class="btn btn--icon" title="Delete" style="color:var(--red)" onclick="deleteMapping(${i})">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+    </div></td>
+  </tr>`;
+}
+
+function renderEditRow(m, i) {
+  const seerrOptions = userState.seerrUsers.map(u =>
+    `<option value="${u.id}" ${m.seerr_id === u.id ? 'selected' : ''}>${esc(u.displayName)}</option>`
+  ).join('');
+  const plexTags = (m.plex_names || []).map((n, pi) =>
+    `<span class="plex-name-tag">${esc(n)}<button type="button" onclick="removePlexName(${i},${pi})" title="Remove">
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button></span>`
+  ).join('');
+  const usedElsewhere = new Set(userState.mappings.flatMap((mm, mi) => mi !== i ? (mm.plex_names || []) : []));
+  const available = userState.allPlexNames.filter(n => !(m.plex_names || []).includes(n) && !usedElsewhere.has(n));
+  const addOptions = available.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  return `<tr class="edit-row">
+    <td><input type="text" class="form-input name-input" value="${esc(m.name)}" id="edit-name-${i}" oninput="userState.mappings[${i}].name=this.value"></td>
+    <td>
+      <div class="plex-name-list">${plexTags}</div>
+      ${available.length ? `<div class="add-plex-row">
+        <select class="form-select" id="add-plex-select-${i}">
+          <option value="">Add Plex name…</option>${addOptions}
+        </select>
+        <button class="btn btn--ghost" style="white-space:nowrap" onclick="addPlexName(${i})">Add</button>
+      </div>` : ''}
+    </td>
+    <td><select class="form-select" onchange="userState.mappings[${i}].seerr_id=this.value?parseInt(this.value):null">
+      <option value="">— none —</option>${seerrOptions}
+    </select></td>
+    <td><div class="actions-cell">
+      <button class="btn btn--primary btn--sm" onclick="saveEdit(${i})">Save</button>
+      <button class="btn btn--ghost btn--sm" onclick="cancelEdit()">Cancel</button>
+    </div></td>
+  </tr>`;
+}
+
+function startEdit(i) {
+  userState._editBackup = JSON.parse(JSON.stringify(userState.mappings[i]));
+  userState.editingIdx = i;
+  renderTable();
+}
+function cancelEdit() {
+  if (userState._editBackup !== undefined) userState.mappings[userState.editingIdx] = userState._editBackup;
+  userState.editingIdx = null;
+  renderTable();
+}
+async function saveEdit(i) { userState.editingIdx = null; await persistUsers(); }
+async function deleteMapping(i) { userState.mappings.splice(i, 1); renderTable(); await persistUsers(); }
+function removePlexName(mi, pi) { userState.mappings[mi].plex_names.splice(pi, 1); renderTable(); }
+function addPlexName(mi) {
+  const sel = document.getElementById(`add-plex-select-${mi}`);
+  if (!sel.value) return;
+  if (!userState.mappings[mi].plex_names) userState.mappings[mi].plex_names = [];
+  userState.mappings[mi].plex_names.push(sel.value);
+  renderTable();
+}
+function openNewMapping() { document.getElementById('new-mapping-form').classList.add('open'); document.getElementById('new-name').focus(); }
+function closeNewMapping() { document.getElementById('new-mapping-form').classList.remove('open'); document.getElementById('new-name').value = ''; document.getElementById('new-plex-select').value = ''; document.getElementById('new-seerr-select').value = ''; }
+function populateNewForm() {
+  document.getElementById('new-plex-select').innerHTML = '<option value="">— select —</option>' + userState.allPlexNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  document.getElementById('new-seerr-select').innerHTML = '<option value="">— none —</option>' + userState.seerrUsers.map(u => `<option value="${u.id}">${esc(u.displayName)}</option>`).join('');
+}
+async function submitNewMapping() {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) { toast('Enter a canonical name.', 'err'); return; }
+  userState.mappings.push({ name, seerr_id: document.getElementById('new-seerr-select').value ? parseInt(document.getElementById('new-seerr-select').value) : null, plex_names: document.getElementById('new-plex-select').value ? [document.getElementById('new-plex-select').value] : [] });
+  closeNewMapping();
+  renderTable();
+  await persistUsers();
+}
+async function persistUsers() {
+  try {
+    const r = await fetch('/api/settings/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userState.mappings) });
+    if (!r.ok) throw new Error();
+    toast('Saved.', 'ok');
+  } catch { toast('Save failed.', 'err'); }
+}
+
+// ── Jobs tab ─────────────────────────────────────────────────────────────────
+async function loadJobs() {
+  const tbody = document.getElementById('jobs-tbody');
+  tbody.innerHTML = '<tr><td colspan="4" class="empty-row"><span class="spinner"></span> Loading…</td></tr>';
+  try {
+    const r = await fetch('/api/settings/jobs');
+    const data = await r.json();
+    if (data.error) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-row" style="color:var(--red)">${esc(data.error)}</td></tr>`;
+      return;
+    }
+    const jobs = Array.isArray(data) ? data : [];
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No jobs found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(job => {
+      const typeClass = (job.type || '').toLowerCase() === 'command' ? 'job-type--command' : 'job-type--process';
+      const next = job.nextExecutionTime ? formatRelative(job.nextExecutionTime) : '—';
+      const running = job.running ? ' class="job-running"' : '';
+      return `<tr${running}>
+        <td>${esc(job.name)}</td>
+        <td><span class="job-type ${typeClass}">${esc(job.type || 'process')}</span></td>
+        <td>${job.running ? '<span class="spinner"></span> Running…' : esc(next)}</td>
+        <td style="text-align:right">
+          <button class="btn btn--run" ${job.running ? 'disabled' : ''} onclick="runJob('${esc(job.id)}', this)">
+            <svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg>
+            Run Now
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-row" style="color:var(--red)">Failed to load jobs.</td></tr>';
+  }
+}
+
+async function runJob(jobId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await fetch(`/api/settings/jobs/${jobId}/run`, { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      toast('Job triggered.', 'ok');
+      setTimeout(loadJobs, 800);
+    } else {
+      toast(data.error || 'Failed to run job.', 'err');
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg> Run Now';
+    }
+  } catch {
+    toast('Request failed.', 'err');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="11" height="11" fill="currentColor" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z"/></svg> Run Now';
+  }
+}
+
+function formatRelative(isoString) {
+  const diff = Math.round((new Date(isoString) - Date.now()) / 1000);
+  if (diff < 0) return 'overdue';
+  if (diff < 60) return `in ${diff}s`;
+  if (diff < 3600) return `in ${Math.round(diff / 60)}m`;
+  if (diff < 86400) return `in ${Math.round(diff / 3600)}h`;
+  return `in ${Math.round(diff / 86400)}d`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadServices();
+loadUsers();
+</script>
+</body>
+</html>
