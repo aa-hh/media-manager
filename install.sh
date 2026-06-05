@@ -115,6 +115,46 @@ else
     warn "Install one before running ./bin/deploy.sh"
 fi
 
+# ── Crontab setup ────────────────────────────────────────────────────────────
+echo
+ENSURE_SCRIPT="$SCRIPT_DIR/bin/media-manager-ensure-running.sh"
+ENSURE_LOG="$SCRIPT_DIR/logs/ensure.log"
+CRON_REBOOT="@reboot $ENSURE_SCRIPT >>$ENSURE_LOG 2>&1"
+CRON_POLL="*/5 * * * * $ENSURE_SCRIPT >>$ENSURE_LOG 2>&1"
+
+if ! command -v crontab &>/dev/null; then
+    warn "crontab not found — skipping automatic startup setup."
+    warn "To keep the container running, add these to your crontab manually:"
+    warn "  @reboot $ENSURE_SCRIPT >>$ENSURE_LOG 2>&1"
+    warn "  */5 * * * * $ENSURE_SCRIPT >>$ENSURE_LOG 2>&1"
+else
+    EXISTING_CRON=$(crontab -l 2>/dev/null || true)
+    ALREADY_SET=false
+    if echo "$EXISTING_CRON" | grep -qF "$ENSURE_SCRIPT"; then
+        ALREADY_SET=true
+    fi
+
+    if [[ "$ALREADY_SET" == true ]]; then
+        ok "Crontab entries already present — skipping"
+    else
+        echo
+        echo -e "  ${BOLD}Crontab setup${RESET}"
+        echo -e "  The following entries keep the container running after reboot:"
+        echo -e "  ${DIM}  @reboot    $ENSURE_SCRIPT${RESET}"
+        echo -e "  ${DIM}  */5 * * *  $ENSURE_SCRIPT${RESET}"
+        echo
+        read -rp "  Add these to your crontab? [Y/n]: " CRON_ANSWER
+        CRON_ANSWER="${CRON_ANSWER:-Y}"
+        if [[ "$CRON_ANSWER" =~ ^[Yy] ]]; then
+            NEW_CRON="${EXISTING_CRON:+${EXISTING_CRON}$'\n'}${CRON_REBOOT}"$'\n'"${CRON_POLL}"
+            echo "$NEW_CRON" | crontab -
+            ok "Crontab entries added"
+        else
+            warn "Skipped — add them manually if you want the container to survive reboots."
+        fi
+    fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo
 echo -e "  ${GREEN}${BOLD}Setup complete.${RESET}  Run ${CYAN}./bin/deploy.sh${RESET} to start, then visit ${CYAN}http://localhost:${PORT}/setup${RESET}"
