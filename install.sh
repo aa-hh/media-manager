@@ -74,10 +74,17 @@ ok "PLEX_CLIENT_ID generated"
 # ── Create config directory ───────────────────────────────────────────────────
 mkdir -p config
 
-# ── Write config/.env (skip if exists) ───────────────────────────────────────
+# ── Write config/.env ────────────────────────────────────────────────────────
 ENV_FILE="config/.env"
 if [[ -f "$ENV_FILE" ]]; then
-    warn "$ENV_FILE already exists — skipping config generation (delete it to regenerate)"
+    # File exists — update PORT only, preserve everything else
+    if grep -q "^PORT=" "$ENV_FILE"; then
+        sed -i "s/^PORT=.*/PORT=${PORT}/" "$ENV_FILE"
+    else
+        echo "PORT=${PORT}" >> "$ENV_FILE"
+    fi
+    # Preserve existing AUTH_SECRET_KEY and PLEX_CLIENT_ID
+    ok "Updated PORT in existing $ENV_FILE"
 else
     cat > "$ENV_FILE" <<EOF
 # media-manager configuration

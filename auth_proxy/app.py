@@ -23,7 +23,14 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
 SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
 SEERR_KEY = os.environ.get("SEERR_API_KEY") or os.environ.get("HOMEPAGE_VAR_SEERR_API_KEY", "")
-SETUP_COMPLETE = os.environ.get("SETUP_COMPLETE", "").lower() in ("true", "1", "yes")
+def _is_setup_complete() -> bool:
+    if os.environ.get("SETUP_COMPLETE", "").lower() in ("true", "1", "yes"):
+        return True
+    if CONFIG_ENV_PATH.exists():
+        for line in CONFIG_ENV_PATH.read_text().splitlines():
+            if line.strip().upper() == "SETUP_COMPLETE=TRUE" or line.strip() == "SETUP_COMPLETE=1":
+                return True
+    return False
 
 signer = URLSafeTimedSerializer(SECRET_KEY)
 server_machine_id: str | None = None
@@ -53,7 +60,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Setup wizard redirect — must come before auth check
-    if not SETUP_COMPLETE:
+    if not _is_setup_complete():
         if path not in ("/setup",) and not path.startswith("/api/setup") and not path.startswith("/auth/"):
             return RedirectResponse("/setup", status_code=302)
         return await call_next(request)
