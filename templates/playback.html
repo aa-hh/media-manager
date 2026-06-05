@@ -207,6 +207,40 @@
   </div>
   {% endif %}
 
+  {# ── User bandwidth ── #}
+  {% if user_bandwidth %}
+  <div class="section">
+    <div class="section-title">Bandwidth per User</div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Stream video bitrate delivered to each user, in Mbps.</p>
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th style="text-align:right">Plays</th>
+            <th style="text-align:right">Median</th>
+            <th style="text-align:right">Avg</th>
+            <th style="text-align:right">Min</th>
+            <th style="text-align:right">Max</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in user_bandwidth %}
+          <tr>
+            <td style="font-weight:500">{{ row.user }}</td>
+            <td style="text-align:right;color:var(--text-muted)">{{ row.plays }}</td>
+            <td style="text-align:right;font-size:.88rem">{{ row.median }} <span style="color:var(--text-muted);font-size:.75rem">Mbps</span></td>
+            <td style="text-align:right;font-size:.88rem">{{ row.avg }} <span style="color:var(--text-muted);font-size:.75rem">Mbps</span></td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.min }}</td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.max }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Playback decision charts ── #}
   {% if analytics %}
   <div class="section">
