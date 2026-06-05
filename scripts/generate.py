@@ -334,10 +334,12 @@ def _compute_format_metrics(db_path: Path) -> dict:
         delivered = _norm_res(stream_res) if stream_res else res_label
         if d == "direct play":
             g["direct"] += 1
-        elif d == "copy":
+        elif d in ("copy", "direct stream"):
             g["copy"] += 1
         elif d == "transcode":
             g["transcode"] += 1
+        else:
+            continue  # unknown decision — skip entirely
         g["quality_counts"][delivered] += 1
 
     def _fmt_rank(fmt: str) -> tuple:

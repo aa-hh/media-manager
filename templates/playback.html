@@ -156,7 +156,7 @@
             <th>Format</th>
             <th style="text-align:right">Plays</th>
             <th style="min-width:130px">Direct Play</th>
-            <th style="min-width:60px">Copy</th>
+            <th style="min-width:80px">Direct Stream</th>
             {% for qp in qps %}
             <th style="text-align:right;min-width:80px">{{ qp }}</th>
             {% endfor %}
@@ -188,6 +188,7 @@
               </div>
             </td>
             <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
+
             {% for qp in qps %}
               {% set pct = row.quality_pcts.get(qp, 0) %}
               <td style="text-align:right;font-size:.82rem;color:var(--text-muted)">{{ pct if pct else '—' }}{% if pct %}%{% endif %}</td>
