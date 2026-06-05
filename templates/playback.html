@@ -149,59 +149,58 @@
     <div class="section-title">Format Performance</div>
     <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Direct play rate by source file format. Rows appear as new formats are played.</p>
     <div class="table-card" style="overflow:auto">
-      <table class="data-table" style="min-width:700px">
+      <table class="data-table" style="min-width:640px">
         <thead>
           <tr>
             <th>Format</th>
             <th style="text-align:right">Plays</th>
             <th style="min-width:130px">Direct Play</th>
-            <th style="min-width:80px">Copy</th>
-            <th style="min-width:80px">Transcode</th>
-            <th style="min-width:220px;color:var(--text-muted);font-weight:400;font-size:.8rem">Transcode quality breakdown</th>
+            <th style="min-width:60px">Copy</th>
+            <th style="min-width:60px">Transcode</th>
+            <th style="min-width:120px">Quality Profile</th>
+            <th style="min-width:60px;text-align:right">Count</th>
           </tr>
         </thead>
         <tbody>
           {% for row in format_metrics %}
-          <tr>
-            <td>
-              {% set parts = row.format.split(" ") %}
-              {% set codec = parts[0] if parts|length > 0 else "" %}
-              {% set res   = parts[1] if parts|length > 1 else "" %}
-              {% set hdr   = parts[2] if parts|length > 2 else "" %}
-              {% set fmt_tags = file_format_tags({"file_info": {"video_codec": codec, "resolution": res, "hdr": hdr != ""}, "quality_profile_name": row.format}) %}
-              {% for label, cls in fmt_tags %}
-                <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
-              {% else %}
-                <span style="font-size:.875rem">{{ row.format }}</span>
-              {% endfor %}
-              {% if hdr %}<span class="fmt-tag tag-hdr" style="margin-right:3px">{{ hdr }}</span>{% endif %}
-            </td>
-            <td style="text-align:right;color:var(--text-muted)">{{ row.total_plays }}</td>
-            <td>
-              <div style="display:flex;align-items:center;gap:8px">
-                <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
-                  <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
+            {% set qrows = row.quality_dist if row.quality_dist else [none] %}
+            {% set span  = qrows | length %}
+            {% for q in qrows %}
+            <tr>
+              {% if loop.first %}
+              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px">
+                {% set parts = row.format.split(" ") %}
+                {% set codec = parts[0] if parts|length > 0 else "" %}
+                {% set res   = parts[1] if parts|length > 1 else "" %}
+                {% set hdr   = parts[2] if parts|length > 2 else "" %}
+                {% set fmt_tags = file_format_tags({"file_info": {"video_codec": codec, "resolution": res, "hdr": hdr != ""}, "quality_profile_name": row.format}) %}
+                {% for label, cls in fmt_tags %}
+                  <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
+                {% else %}
+                  <span style="font-size:.875rem">{{ row.format }}</span>
+                {% endfor %}
+                {% if hdr %}<span class="fmt-tag tag-hdr" style="margin-right:3px">{{ hdr }}</span>{% endif %}
+              </td>
+              <td rowspan="{{ span }}" style="text-align:right;color:var(--text-muted);vertical-align:top;padding-top:12px">{{ row.total_plays }}</td>
+              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
+                    <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
+                  </div>
+                  <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
                 </div>
-                <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
-              </div>
-            </td>
-            <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
-            <td><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
-            <td>
-              {% if row.quality_dist %}
-                <div style="display:flex;flex-wrap:wrap;gap:4px">
-                  {% for q in row.quality_dist %}
-                    <span style="font-size:.75rem;background:var(--bg3);border-radius:4px;padding:2px 6px;white-space:nowrap">
-                      <span style="color:var(--text-muted)">{{ q.quality }}</span>
-                      <span style="color:{{ 'var(--red)' if q.pct >= 20 else 'var(--yellow)' if q.pct >= 10 else 'var(--text-muted)' }};margin-left:4px">{{ q.pct }}%</span>
-                    </span>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <span style="color:var(--text-muted);font-size:.8rem">—</span>
+              </td>
+              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px"><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
+              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px"><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
               {% endif %}
-            </td>
-          </tr>
+              {% if q %}
+              <td style="font-size:.82rem;color:var(--text-muted)">{{ q.quality }}</td>
+              <td style="text-align:right;font-size:.82rem;color:{{ 'var(--red)' if q.pct >= 50 else 'var(--yellow)' if q.pct >= 20 else 'var(--text-muted)' }}">{{ q.count }}</td>
+              {% else %}
+              <td colspan="2" style="font-size:.82rem;color:var(--text-muted)">—</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
           {% endfor %}
         </tbody>
       </table>
