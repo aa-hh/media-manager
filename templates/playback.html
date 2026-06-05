@@ -211,15 +211,17 @@
   {% if user_bandwidth %}
   <div class="section">
     <div class="section-title">Bandwidth per User</div>
-    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Stream video bitrate delivered to each user, in Mbps.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Stream bitrate as a % of source bitrate — 100% means full quality delivered, lower means the client received a reduced bitrate stream.</p>
     <div class="table-card">
       <table class="data-table">
         <thead>
           <tr>
             <th>User</th>
             <th style="text-align:right">Plays</th>
+            <th style="text-align:right">Avg Source</th>
+            <th style="text-align:right">Avg Stream</th>
+            <th style="min-width:140px">Avg Quality</th>
             <th style="text-align:right">Median</th>
-            <th style="text-align:right">Avg</th>
             <th style="text-align:right">Min</th>
             <th style="text-align:right">Max</th>
           </tr>
@@ -229,10 +231,19 @@
           <tr>
             <td style="font-weight:500">{{ row.user }}</td>
             <td style="text-align:right;color:var(--text-muted)">{{ row.plays }}</td>
-            <td style="text-align:right;font-size:.88rem">{{ row.median }} <span style="color:var(--text-muted);font-size:.75rem">Mbps</span></td>
-            <td style="text-align:right;font-size:.88rem">{{ row.avg }} <span style="color:var(--text-muted);font-size:.75rem">Mbps</span></td>
-            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.min }}</td>
-            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.max }}</td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.avg_src }} <span style="font-size:.75rem">Mbps</span></td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.avg_stream }} <span style="font-size:.75rem">Mbps</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:80px">
+                  <div style="width:{{ [row.avg_pct, 100] | min }}%;height:100%;background:{{ 'var(--green)' if row.avg_pct >= 90 else ('var(--yellow)' if row.avg_pct >= 60 else 'var(--red)') }};border-radius:3px"></div>
+                </div>
+                <span style="font-size:.82rem;color:{{ 'var(--green)' if row.avg_pct >= 90 else ('var(--yellow)' if row.avg_pct >= 60 else 'var(--red)') }}">{{ row.avg_pct }}%</span>
+              </div>
+            </td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.median_pct }}%</td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.min_pct }}%</td>
+            <td style="text-align:right;font-size:.88rem;color:var(--text-muted)">{{ row.max_pct }}%</td>
           </tr>
           {% endfor %}
         </tbody>

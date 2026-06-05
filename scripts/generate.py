@@ -403,7 +403,11 @@ def _compute_format_metrics(db_path: Path) -> dict:
 
 
 def _compute_user_bandwidth(db_path: Path) -> list:
-    """Per-user stream_video_bitrate stats: median, avg, min, max (kbps → Mbps)."""
+    """
+    Per-user bandwidth efficiency: stream_video_bitrate vs src_video_bitrate.
+    Stats are computed on the ratio (stream / src * 100%) so 100% = full quality.
+    Also surfaces avg source and avg stream Mbps for context.
+    """
     import sqlite3
     from collections import defaultdict
 
@@ -412,40 +416,50 @@ def _compute_user_bandwidth(db_path: Path) -> list:
     try:
         con = sqlite3.connect(db_path)
         rows = con.execute("""
-            SELECT client_friendly_name, stream_video_bitrate
+            SELECT client_friendly_name, stream_video_bitrate, src_video_bitrate
             FROM plays
-            WHERE event = 'play' AND stream_video_bitrate IS NOT NULL AND stream_video_bitrate > 0
+            WHERE event = 'play'
+              AND stream_video_bitrate IS NOT NULL AND stream_video_bitrate != ''
+              AND src_video_bitrate   IS NOT NULL AND src_video_bitrate   != ''
         """).fetchall()
         con.close()
     except Exception:
         return []
 
     by_user: dict = defaultdict(list)
-    for user, bw in rows:
+    for user, stream_bw, src_bw in rows:
         try:
-            by_user[user or "Unknown"].append(int(bw))
+            s = int(stream_bw)
+            o = int(src_bw)
+            if o > 0:
+                by_user[user or "Unknown"].append((s, o))
         except (TypeError, ValueError):
             pass
 
     def _median(vals):
         s = sorted(vals)
         n = len(s)
-        return (s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
     def _mbps(kbps):
         return round(kbps / 1000, 1)
 
     result = []
-    for user, vals in sorted(by_user.items()):
+    for user, plays in by_user.items():
+        ratios    = [s / o * 100 for s, o in plays]
+        src_vals  = [o for _, o in plays]
+        strm_vals = [s for s, _ in plays]
         result.append({
-            "user":   user,
-            "plays":  len(vals),
-            "median": _mbps(_median(vals)),
-            "avg":    _mbps(sum(vals) / len(vals)),
-            "min":    _mbps(min(vals)),
-            "max":    _mbps(max(vals)),
+            "user":       user,
+            "plays":      len(plays),
+            "avg_src":    _mbps(sum(src_vals)  / len(src_vals)),
+            "avg_stream": _mbps(sum(strm_vals) / len(strm_vals)),
+            "median_pct": round(_median(ratios)),
+            "avg_pct":    round(sum(ratios) / len(ratios)),
+            "min_pct":    round(min(ratios)),
+            "max_pct":    round(max(ratios)),
         })
-    return sorted(result, key=lambda r: -r["avg"])
+    return sorted(result, key=lambda r: -r["avg_pct"])
 
 
 def _compute_playback_analytics(db_path: Path) -> dict | None:
