@@ -116,25 +116,25 @@
   <div class="section">
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-label">Total Plays</div>
-        <div class="stat-value">{{ analytics.total_plays }}</div>
+        <div class="label">Total Plays</div>
+        <div class="value">{{ analytics.total_plays }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Direct Play</div>
-        <div class="stat-value" style="color:var(--green)">{{ analytics.direct_pct }}%</div>
+        <div class="label">Direct Play</div>
+        <div class="value" style="color:var(--green)">{{ analytics.direct_pct }}%</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Transcode</div>
-        <div class="stat-value" style="color:{{ 'var(--red)' if analytics.transcode_pct >= 50 else 'var(--yellow)' if analytics.transcode_pct >= 20 else 'var(--text-muted)' }}">{{ analytics.transcode_pct }}%</div>
+        <div class="label">Transcode</div>
+        <div class="value" style="color:{{ 'var(--red)' if analytics.transcode_pct >= 50 else 'var(--yellow)' if analytics.transcode_pct >= 20 else 'var(--text-muted)' }}">{{ analytics.transcode_pct }}%</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Copy (remux)</div>
-        <div class="stat-value" style="color:var(--text-muted)">{{ analytics.copy_pct }}%</div>
+        <div class="label">Copy (remux)</div>
+        <div class="value" style="color:var(--text-muted)">{{ analytics.copy_pct }}%</div>
       </div>
       {% if analytics.worst_platform %}
       <div class="stat-card">
-        <div class="stat-label">Most Problematic Client</div>
-        <div class="stat-value" style="font-size:1.1rem">{{ analytics.worst_platform }}</div>
+        <div class="label">Most Problematic Client</div>
+        <div class="value" style="font-size:1.1rem">{{ analytics.worst_platform }}</div>
       </div>
       {% endif %}
     </div>

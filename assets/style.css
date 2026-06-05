@@ -135,8 +135,10 @@ nav ul li a.active {
   border-radius: var(--radius);
   padding: 20px;
 }
-.chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: .06em; }
+.chart-card h3,
+.chart-title { font-size: .9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: .06em; }
 .chart-card canvas { max-height: 260px; }
+.chart-card--small { max-width: 320px; }
 
 /* ── Recommendation cards ───────────────────────────────────── */
 .rec-grid {
