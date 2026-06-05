@@ -10,8 +10,8 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 app = FastAPI()
 
 SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-PLEX_TOKEN = os.environ["HOMEPAGE_VAR_PLEX_TOKEN"]
-PLEX_SERVER_URL = os.environ["PLEX_URL"].rstrip("/")
+PLEX_TOKEN = os.environ.get("PLEX_TOKEN") or os.environ.get("HOMEPAGE_VAR_PLEX_TOKEN", "")
+PLEX_SERVER_URL = os.environ.get("PLEX_URL", "").rstrip("/")
 CLIENT_ID = os.environ.get("PLEX_CLIENT_ID", "2a1c3b4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d")
 API_KEY = os.environ.get("AUTH_API_KEY", "")
 SESSION_MAX_AGE = 86400 * 7
@@ -20,8 +20,10 @@ COOKIE_SESSION = "mm_session"
 PUBLIC_DIR = Path(os.environ.get("PUBLIC_DIR", "/app/public"))
 CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "/app/config"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
+CONFIG_ENV_PATH = CONFIG_DIR / ".env"
 SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
-SEERR_KEY = os.environ.get("HOMEPAGE_VAR_SEERR_API_KEY", "")
+SEERR_KEY = os.environ.get("SEERR_API_KEY") or os.environ.get("HOMEPAGE_VAR_SEERR_API_KEY", "")
+SETUP_COMPLETE = os.environ.get("SETUP_COMPLETE", "").lower() in ("true", "1", "yes")
 
 signer = URLSafeTimedSerializer(SECRET_KEY)
 server_machine_id: str | None = None
@@ -30,6 +32,9 @@ server_machine_id: str | None = None
 @app.on_event("startup")
 async def startup():
     global server_machine_id
+    if not PLEX_SERVER_URL or not PLEX_TOKEN:
+        print("Info: PLEX_URL/PLEX_TOKEN not configured — Plex server identity check skipped")
+        return
     try:
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
             resp = await client.get(
@@ -46,6 +51,12 @@ async def startup():
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
+
+    # Setup wizard redirect — must come before auth check
+    if not SETUP_COMPLETE:
+        if path not in ("/setup",) and not path.startswith("/api/setup") and not path.startswith("/auth/"):
+            return RedirectResponse("/setup", status_code=302)
+        return await call_next(request)
 
     if path.startswith("/auth/"):
         return await call_next(request)
@@ -374,6 +385,170 @@ async def settings_save_users(request: Request):
     if not isinstance(body, list):
         return JSONResponse({"detail": "Expected a JSON array."}, status_code=400)
     _write_user_mappings(body)
+    return JSONResponse({"ok": True})
+
+
+# ── Setup wizard ─────────────────────────────────────────────────────────────
+
+@app.get("/setup")
+async def setup_page():
+    html_path = Path(__file__).parent / "setup.html"
+    if not html_path.exists():
+        return HTMLResponse("<h1>Setup page not found</h1>", status_code=500)
+    return HTMLResponse(html_path.read_text())
+
+
+def _read_config_env() -> dict:
+    result = {}
+    if CONFIG_ENV_PATH.exists():
+        for line in CONFIG_ENV_PATH.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            result[k.strip()] = v.strip().strip('"').strip("'")
+    return result
+
+
+def _write_config_env(values: dict) -> None:
+    CONFIG_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing = _read_config_env()
+    existing.update(values)
+    lines = []
+    for k, v in existing.items():
+        lines.append(f"{k}={v}")
+    CONFIG_ENV_PATH.write_text("\n".join(lines) + "\n")
+
+
+@app.post("/api/setup/test-service")
+async def setup_test_service(request: Request):
+    body = await request.json()
+    service = body.get("service", "").lower()
+    url = (body.get("url") or "").rstrip("/")
+    key = body.get("key", "")
+
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=8) as client:
+            if service in ("sonarr", "radarr"):
+                r = await client.get(f"{url}/api/v3/system/status", params={"apikey": key})
+                r.raise_for_status()
+                version = r.json().get("version", "unknown")
+                return JSONResponse({"ok": True, "version": version})
+            elif service in ("overseerr", "seerr"):
+                r = await client.get(f"{url}/api/v1/status", headers={"X-Api-Key": key})
+                r.raise_for_status()
+                version = r.json().get("version", "unknown")
+                return JSONResponse({"ok": True, "version": version})
+            elif service == "tautulli":
+                r = await client.get(f"{url}/api/v2", params={"apikey": key, "cmd": "get_tautulli_info"})
+                r.raise_for_status()
+                data = r.json()
+                version = data.get("response", {}).get("data", {}).get("tautulli_version", "unknown")
+                return JSONResponse({"ok": True, "version": version})
+            elif service == "plex":
+                r = await client.get(f"{url}/identity",
+                                     headers={"X-Plex-Token": key, "Accept": "application/json"})
+                r.raise_for_status()
+                version = r.json().get("MediaContainer", {}).get("version", "unknown")
+                return JSONResponse({"ok": True, "version": version})
+            elif service == "tmdb":
+                r = await client.get("https://api.themoviedb.org/3/configuration",
+                                     params={"api_key": key})
+                r.raise_for_status()
+                return JSONResponse({"ok": True, "version": "API v3"})
+            else:
+                return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=200)
+
+
+@app.get("/api/setup/plex-servers")
+async def setup_plex_servers(request: Request):
+    token = request.query_params.get("token", "")
+    if not token:
+        return JSONResponse({"error": "token required"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://plex.tv/api/v2/resources",
+                params={"includeHttps": 1, "includeRelay": 1, "includeIPv6": 0},
+                headers={
+                    "X-Plex-Client-Identifier": CLIENT_ID,
+                    "X-Plex-Product": "Media Manager",
+                    "X-Plex-Token": token,
+                    "Accept": "application/json",
+                },
+            )
+            resources = r.json()
+        servers = []
+        for res in resources:
+            if not res.get("provides", "").startswith("server"):
+                continue
+            connections = [
+                {"uri": c["uri"], "local": c.get("local", False), "relay": c.get("relay", False)}
+                for c in res.get("connections", [])
+            ]
+            servers.append({
+                "name": res.get("name", ""),
+                "clientIdentifier": res.get("clientIdentifier", ""),
+                "connections": connections,
+            })
+        return JSONResponse({"servers": servers})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/api/setup/plex-libraries")
+async def setup_plex_libraries(request: Request):
+    url = request.query_params.get("url", "").rstrip("/")
+    token = request.query_params.get("token", "")
+    if not url or not token:
+        return JSONResponse({"error": "url and token required"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            r = await client.get(
+                f"{url}/library/sections",
+                headers={"X-Plex-Token": token, "Accept": "application/json"},
+            )
+            r.raise_for_status()
+            sections = r.json().get("MediaContainer", {}).get("Directory", [])
+        libraries = [{"id": s["key"], "title": s["title"], "type": s["type"]} for s in sections]
+        return JSONResponse({"libraries": libraries})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.post("/api/setup/save")
+async def setup_save(request: Request):
+    body = await request.json()
+    sonarr_url = body.get("SONARR_URL", "").strip()
+    radarr_url = body.get("RADARR_URL", "").strip()
+    if not sonarr_url and not radarr_url:
+        return JSONResponse({"detail": "At least one of Sonarr or Radarr is required."}, status_code=400)
+
+    allowed_keys = {
+        "SONARR_URL", "SONARR_API_KEY", "RADARR_URL", "RADARR_API_KEY",
+        "SEERR_URL", "SEERR_API_KEY", "PLEX_URL", "PLEX_TOKEN",
+        "TAUTULLI_URL", "TAUTULLI_API_KEY", "TMDB_API_KEY",
+        "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB",
+    }
+    config_values = {k: v for k, v in body.items() if k in allowed_keys and v}
+    config_values["SETUP_COMPLETE"] = "true"
+    _write_config_env(config_values)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/settings/config")
+async def settings_save_config(request: Request):
+    body = await request.json()
+    allowed_keys = {
+        "SONARR_URL", "SONARR_API_KEY", "RADARR_URL", "RADARR_API_KEY",
+        "SEERR_URL", "SEERR_API_KEY", "PLEX_URL", "PLEX_TOKEN",
+        "TAUTULLI_URL", "TAUTULLI_API_KEY", "TMDB_API_KEY",
+        "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB",
+    }
+    config_values = {k: v for k, v in body.items() if k in allowed_keys}
+    _write_config_env(config_values)
     return JSONResponse({"ok": True})
 
 

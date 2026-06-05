@@ -3,9 +3,9 @@ services:
     build: ./auth_proxy
     container_name: media-manager
     ports:
-      - "10400:8000"
+      - "${PORT:-10400}:8000"
     env_file:
-      - /home/ahhhhhhh/homepage/config/homepage.env
+      - ./config/.env
     environment:
       - PUBLIC_DIR=/app/public
       - CONFIG_DIR=/app/config

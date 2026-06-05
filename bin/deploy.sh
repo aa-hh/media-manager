@@ -157,4 +157,5 @@ else
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-echo -e "\n  ${GREEN}${BOLD}All done.${RESET}  Listening on port 10400\n"
+PORT="${PORT:-10400}"
+echo -e "\n  ${GREEN}${BOLD}All done.${RESET}  Listening on port ${PORT}\n"

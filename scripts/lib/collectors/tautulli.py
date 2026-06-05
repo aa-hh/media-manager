@@ -28,7 +28,120 @@ def _get_user_history(url: str, api_key: str, user_id: int, section_id: int, len
     return resp.get("data", {}).get("data", [])
 
 
-def fetch(url: str, api_key: str) -> dict:
+def _process_history(history: list[dict], media_type: str, fname: str, store: dict, tv_season_watch: dict) -> None:
+    """Process a list of history entries and update store and tv_season_watch in place."""
+    if not history:
+        return
+
+    # Group by grandparent_rating_key (show) or rating_key (movie)
+    by_item: dict[str, dict] = {}
+    for entry in history:
+        if media_type == "tv":
+            item_key = entry.get("grandparent_rating_key") or entry.get("rating_key")
+            item_title = entry.get("grandparent_title") or entry.get("title")
+            guid = entry.get("grandparent_guid", "")
+        else:
+            item_key = entry.get("rating_key")
+            item_title = entry.get("title")
+            guid = entry.get("guid", "")
+
+        if not item_key:
+            continue
+
+        tmdb_id = None
+        if "tmdb://" in guid:
+            try:
+                tmdb_id = int(guid.split("tmdb://")[1].split("?")[0])
+            except (ValueError, IndexError):
+                pass
+
+        if item_key not in by_item:
+            by_item[item_key] = {
+                "tmdb_id": tmdb_id,
+                "title": item_title,
+                "plays": 0,
+                "duration_seconds": 0,
+                "last_watched": None,
+                "entries": [],
+            }
+
+        rec = by_item[item_key]
+        if tmdb_id and not rec["tmdb_id"]:
+            rec["tmdb_id"] = tmdb_id
+        rec["plays"] += 1
+        rec["duration_seconds"] += entry.get("duration", 0)
+        date = entry.get("date")
+        if date:
+            if not rec["last_watched"] or date > rec["last_watched"]:
+                rec["last_watched"] = date
+        rec["entries"].append(entry)
+
+    for item_key, rec in by_item.items():
+        tid = rec["tmdb_id"]
+        if not tid:
+            continue
+        if tid not in store:
+            store[tid] = {}
+
+        if media_type == "tv":
+            unique_eps = len({
+                (e.get("parent_media_index"), e.get("media_index"))
+                for e in rec["entries"]
+                if e.get("parent_media_index") and e.get("media_index")
+            })
+            completion_pct = None  # resolved during enrichment with Sonarr episode counts
+
+            # Season-level aggregation
+            by_season: dict[int, dict] = {}
+            for e in rec["entries"]:
+                snum = e.get("parent_media_index")
+                epnum = e.get("media_index")
+                date = e.get("date")
+                if not snum:
+                    continue
+                snum = int(snum)
+                if snum not in by_season:
+                    by_season[snum] = {"plays": 0, "last_watched": None, "unique_episodes": set()}
+                srec = by_season[snum]
+                srec["plays"] += 1
+                if date and (srec["last_watched"] is None or date > srec["last_watched"]):
+                    srec["last_watched"] = date
+                if epnum:
+                    srec["unique_episodes"].add(epnum)
+
+            if tid not in tv_season_watch:
+                tv_season_watch[tid] = {}
+            for snum, srec in by_season.items():
+                if snum not in tv_season_watch[tid]:
+                    tv_season_watch[tid][snum] = {}
+                tv_season_watch[tid][snum][fname] = {
+                    "plays": srec["plays"],
+                    "unique_episodes_watched": len(srec["unique_episodes"]),
+                    "last_watched": srec["last_watched"],
+                }
+        else:
+            completion_pct = 100 if rec["plays"] >= 1 else 0
+
+        store[tid][fname] = {
+            "plays": rec["plays"],
+            "duration_seconds": rec["duration_seconds"],
+            "last_watched": rec["last_watched"],
+            "completion_pct": completion_pct,
+            "unique_episodes_watched": (
+                len({(e.get("parent_media_index"), e.get("media_index"))
+                     for e in rec["entries"]
+                     if e.get("parent_media_index") and e.get("media_index")})
+                if media_type == "tv" else None
+            ),
+        }
+
+
+def fetch(
+    url: str,
+    api_key: str,
+    tv_section_ids: list[str] | None = None,
+    movie_section_ids: list[str] | None = None,
+) -> dict:
     """
     Returns:
       {
@@ -37,6 +150,11 @@ def fetch(url: str, api_key: str) -> dict:
         "users": [ { user_id, friendly_name } ]
       }
     """
+    if tv_section_ids is None:
+        tv_section_ids = ["1"]
+    if movie_section_ids is None:
+        movie_section_ids = ["2"]
+
     users = _get_users(url, api_key)
     real_users = [u for u in users if u.get("friendly_name") and u.get("user_id")]
     log.info(f"Tautulli: found {len(real_users)} users")
@@ -49,112 +167,15 @@ def fetch(url: str, api_key: str) -> dict:
         uid = user["user_id"]
         fname = user["friendly_name"]
 
-        for section_id, media_type, store in [("1", "tv", tv_watch), ("2", "movie", movie_watch)]:
+        # TV sections
+        for section_id in tv_section_ids:
             history = _get_user_history(url, api_key, uid, section_id)
-            if not history:
-                continue
+            _process_history(history, "tv", fname, tv_watch, tv_season_watch)
 
-            # Group by grandparent_rating_key (show) or rating_key (movie)
-            by_item: dict[str, dict] = {}
-            for entry in history:
-                if media_type == "tv":
-                    item_key = entry.get("grandparent_rating_key") or entry.get("rating_key")
-                    item_title = entry.get("grandparent_title") or entry.get("title")
-                    guid = entry.get("grandparent_guid", "")
-                else:
-                    item_key = entry.get("rating_key")
-                    item_title = entry.get("title")
-                    guid = entry.get("guid", "")
-
-                if not item_key:
-                    continue
-
-                tmdb_id = None
-                if "tmdb://" in guid:
-                    try:
-                        tmdb_id = int(guid.split("tmdb://")[1].split("?")[0])
-                    except (ValueError, IndexError):
-                        pass
-
-                if item_key not in by_item:
-                    by_item[item_key] = {
-                        "tmdb_id": tmdb_id,
-                        "title": item_title,
-                        "plays": 0,
-                        "duration_seconds": 0,
-                        "last_watched": None,
-                        "entries": [],
-                    }
-
-                rec = by_item[item_key]
-                if tmdb_id and not rec["tmdb_id"]:
-                    rec["tmdb_id"] = tmdb_id
-                rec["plays"] += 1
-                rec["duration_seconds"] += entry.get("duration", 0)
-                date = entry.get("date")
-                if date:
-                    if not rec["last_watched"] or date > rec["last_watched"]:
-                        rec["last_watched"] = date
-                rec["entries"].append(entry)
-
-            for item_key, rec in by_item.items():
-                tid = rec["tmdb_id"]
-                if not tid:
-                    continue
-                if tid not in store:
-                    store[tid] = {}
-
-                if media_type == "tv":
-                    unique_eps = len({
-                        (e.get("parent_media_index"), e.get("media_index"))
-                        for e in rec["entries"]
-                        if e.get("parent_media_index") and e.get("media_index")
-                    })
-                    completion_pct = None  # resolved during enrichment with Sonarr episode counts
-
-                    # Season-level aggregation
-                    by_season: dict[int, dict] = {}
-                    for e in rec["entries"]:
-                        snum = e.get("parent_media_index")
-                        epnum = e.get("media_index")
-                        date = e.get("date")
-                        if not snum:
-                            continue
-                        snum = int(snum)
-                        if snum not in by_season:
-                            by_season[snum] = {"plays": 0, "last_watched": None, "unique_episodes": set()}
-                        srec = by_season[snum]
-                        srec["plays"] += 1
-                        if date and (srec["last_watched"] is None or date > srec["last_watched"]):
-                            srec["last_watched"] = date
-                        if epnum:
-                            srec["unique_episodes"].add(epnum)
-
-                    if tid not in tv_season_watch:
-                        tv_season_watch[tid] = {}
-                    for snum, srec in by_season.items():
-                        if snum not in tv_season_watch[tid]:
-                            tv_season_watch[tid][snum] = {}
-                        tv_season_watch[tid][snum][fname] = {
-                            "plays": srec["plays"],
-                            "unique_episodes_watched": len(srec["unique_episodes"]),
-                            "last_watched": srec["last_watched"],
-                        }
-                else:
-                    completion_pct = 100 if rec["plays"] >= 1 else 0
-
-                store[tid][fname] = {
-                    "plays": rec["plays"],
-                    "duration_seconds": rec["duration_seconds"],
-                    "last_watched": rec["last_watched"],
-                    "completion_pct": completion_pct,
-                    "unique_episodes_watched": (
-                        len({(e.get("parent_media_index"), e.get("media_index"))
-                             for e in rec["entries"]
-                             if e.get("parent_media_index") and e.get("media_index")})
-                        if media_type == "tv" else None
-                    ),
-                }
+        # Movie sections
+        for section_id in movie_section_ids:
+            history = _get_user_history(url, api_key, uid, section_id)
+            _process_history(history, "movie", fname, movie_watch, tv_season_watch)
 
     log.info(f"Tautulli: processed watch data for {len(tv_watch)} shows, {len(movie_watch)} movies")
 

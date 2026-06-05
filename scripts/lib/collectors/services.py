@@ -1,6 +1,7 @@
 """
 Services health + version collector.
 Checks each linked service's API, current version, and available updates.
+Services that are not configured (no URL/key) are skipped gracefully.
 """
 import requests
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ def _get(url, headers=None, params=None, timeout=8):
         r = requests.get(url, headers=headers or {}, params=params or {}, timeout=timeout, verify=False)
         r.raise_for_status()
         return r.json()
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -41,59 +42,26 @@ def _parse_github_body(body: str) -> dict:
         elif re.search(r"fix|bug|patch|change|breaking", low) and line.startswith("#"):
             current = "fixed"
         elif line.strip().startswith("-") and current:
-            # Strip commit hashes and links, keep human text
             text = re.sub(r"\s*-\s*\(\[.*", "", line.strip().lstrip("- "))
             text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-            text = re.sub(r"^\*[^*]+\*\s*", "", text)  # strip *(scope)*
+            text = re.sub(r"^\*[^*]+\*\s*", "", text)
             text = text.strip()
             if text and len(text) > 4:
                 (new_items if current == "new" else fixed_items).append(text)
     return {"new": new_items[:6], "fixed": fixed_items[:6]}
 
 
-def _check_sonarr() -> dict:
-    base = cfg("SONARR_URL", "https://sonarr.box.ahamilton.online")
-    key = cfg("HOMEPAGE_VAR_SONARR_API_KEY")
-    params = {"apikey": key}
+def _check_arr(name: str, url: str, key: str) -> dict:
+    if not url or not key:
+        return {"name": name, "url": url or "", "reachable": False, "not_configured": True}
 
-    status = _get(f"{base}/api/v3/system/status", params=params)
+    params = {"apikey": key}
+    status = _get(f"{url}/api/v3/system/status", params=params)
     if not status:
-        return {"name": "Sonarr", "url": base, "reachable": False}
+        return {"name": name, "url": url, "reachable": False}
 
     current = status.get("version", "unknown")
-    updates = _get(f"{base}/api/v3/update", params=params) or []
-    latest_entry = next((u for u in updates if u.get("latest")), None)
-    latest = latest_entry["version"] if latest_entry else current
-    installable = latest_entry.get("installable", False) if latest_entry else False
-    # update_available = latest entry exists and is not already installed
-    update_available = latest_entry is not None and not latest_entry.get("installed", False)
-    changes = latest_entry.get("changes", {}) if latest_entry else {}
-
-    return {
-        "name": "Sonarr",
-        "url": base,
-        "reachable": True,
-        "current_version": current,
-        "latest_version": latest,
-        "update_available": update_available,
-        "installable": installable,
-        "changes": changes,
-        "update_method": "api",
-        "trigger_cmd": f"curl -sf -X POST '{base}/api/v3/command' -H 'X-Api-Key: {key}' -H 'Content-Type: application/json' -d '{{\"name\":\"ApplicationUpdate\"}}'",
-    }
-
-
-def _check_radarr() -> dict:
-    base = cfg("RADARR_URL", "https://radarr.box.ahamilton.online")
-    key = cfg("HOMEPAGE_VAR_RADARR_API_KEY")
-    params = {"apikey": key}
-
-    status = _get(f"{base}/api/v3/system/status", params=params)
-    if not status:
-        return {"name": "Radarr", "url": base, "reachable": False}
-
-    current = status.get("version", "unknown")
-    updates = _get(f"{base}/api/v3/update", params=params) or []
+    updates = _get(f"{url}/api/v3/update", params=params) or []
     latest_entry = next((u for u in updates if u.get("latest")), None)
     latest = latest_entry["version"] if latest_entry else current
     installable = latest_entry.get("installable", False) if latest_entry else False
@@ -101,8 +69,8 @@ def _check_radarr() -> dict:
     changes = latest_entry.get("changes", {}) if latest_entry else {}
 
     return {
-        "name": "Radarr",
-        "url": base,
+        "name": name,
+        "url": url,
         "reachable": True,
         "current_version": current,
         "latest_version": latest,
@@ -110,13 +78,43 @@ def _check_radarr() -> dict:
         "installable": installable,
         "changes": changes,
         "update_method": "api",
-        "trigger_cmd": f"curl -sf -X POST '{base}/api/v3/command' -H 'X-Api-Key: {key}' -H 'Content-Type: application/json' -d '{{\"name\":\"ApplicationUpdate\"}}'",
+        "trigger_cmd": (
+            f"curl -sf -X POST '{url}/api/v3/command' "
+            f"-H 'X-Api-Key: {key}' -H 'Content-Type: application/json' "
+            f"-d '{{\"name\":\"ApplicationUpdate\"}}'"
+        ),
     }
+
+
+def _check_sonarr_instances() -> list[dict]:
+    urls = [u.strip() for u in cfg("SONARR_URL", "").split(",") if u.strip()]
+    keys = [k.strip() for k in cfg("SONARR_API_KEY", "").split(",") if k.strip()]
+    if not urls:
+        return [{"name": "Sonarr", "url": "", "reachable": False, "not_configured": True}]
+    results = []
+    for i, (url, key) in enumerate(zip(urls, keys + [""] * len(urls))):
+        label = "Sonarr" if len(urls) == 1 else f"Sonarr ({i + 1})"
+        results.append(_check_arr(label, url, key))
+    return results
+
+
+def _check_radarr_instances() -> list[dict]:
+    urls = [u.strip() for u in cfg("RADARR_URL", "").split(",") if u.strip()]
+    keys = [k.strip() for k in cfg("RADARR_API_KEY", "").split(",") if k.strip()]
+    if not urls:
+        return [{"name": "Radarr", "url": "", "reachable": False, "not_configured": True}]
+    results = []
+    for i, (url, key) in enumerate(zip(urls, keys + [""] * len(urls))):
+        label = "Radarr" if len(urls) == 1 else f"Radarr ({i + 1})"
+        results.append(_check_arr(label, url, key))
+    return results
 
 
 def _check_overseerr() -> dict:
-    base = cfg("SEERR_URL", "https://seerr.box.ahamilton.online")
-    key = cfg("HOMEPAGE_VAR_SEERR_API_KEY")
+    base = cfg("SEERR_URL", "")
+    key = cfg("SEERR_API_KEY", "")
+    if not base or not key:
+        return {"name": "Overseerr", "url": base, "reachable": False, "not_configured": True}
 
     status = _get(f"{base}/api/v1/status", headers={"X-Api-Key": key})
     if not status:
@@ -139,7 +137,7 @@ def _check_overseerr() -> dict:
     update_available = update_available or (_ver_tuple(latest) > _ver_tuple(current))
 
     return {
-        "name": "Seerr",
+        "name": "Overseerr",
         "url": base,
         "reachable": True,
         "current_version": current,
@@ -149,16 +147,17 @@ def _check_overseerr() -> dict:
         "changes": gh_changes,
         "commits_behind": commits_behind,
         "commit_tag": commit_tag,
-        "update_method": "script",
-        "update_notes": "Run: ~/seerr/bin/seerr-update.sh\nDry-run first: ~/seerr/bin/seerr-update.sh --dry-run\nLogs: ~/seerr/config/logs/seerr-update.log\nNote: cron runs this automatically at 04:30 daily.",
+        "update_method": "manual",
     }
 
 
 def _check_tautulli() -> dict:
-    base = cfg("TAUTULLI_URL", "http://localhost:22805")
-    key = cfg("TAUTULLI_API_KEY")
-    params = {"apikey": key, "cmd": "get_tautulli_info"}
+    base = cfg("TAUTULLI_URL", "")
+    key = cfg("TAUTULLI_API_KEY", "")
+    if not base or not key:
+        return {"name": "Tautulli", "url": base, "reachable": False, "not_configured": True}
 
+    params = {"apikey": key, "cmd": "get_tautulli_info"}
     data = _get(f"{base}/api/v2", params=params)
     if not data or data.get("response", {}).get("result") != "success":
         return {"name": "Tautulli", "url": base, "reachable": False}
@@ -178,12 +177,6 @@ def _check_tautulli() -> dict:
 
     update_available = _ver_tuple(latest) > _ver_tuple(current)
 
-    update_notes = (
-        "Git install — run: cd ~/Tautulli && git pull && sudo systemctl restart tautulli"
-        if install_type == "git"
-        else "Update via your deployment method."
-    )
-
     return {
         "name": "Tautulli",
         "url": base,
@@ -194,21 +187,21 @@ def _check_tautulli() -> dict:
         "installable": False,
         "install_type": install_type,
         "update_method": "manual",
-        "update_notes": update_notes,
+        "update_notes": "Update via your deployment method.",
     }
 
 
 def _check_plex() -> dict:
-    token = cfg("HOMEPAGE_VAR_PLEX_TOKEN")
-    # Try local first, fallback to direct URL from config
-    plex_url = cfg("PLEX_URL", "http://localhost:32400")
-    headers = {"X-Plex-Token": token, "Accept": "application/json"}
+    token = cfg("PLEX_TOKEN", "")
+    plex_url = cfg("PLEX_URL", "")
+    if not plex_url or not token:
+        return {"name": "Plex", "url": plex_url, "reachable": False, "not_configured": True}
 
+    headers = {"X-Plex-Token": token, "Accept": "application/json"}
     data = _get(f"{plex_url}/identity", headers=headers)
     if not data:
         return {"name": "Plex", "url": plex_url, "reachable": False}
 
-    # Plex wraps in MediaContainer
     mc = data.get("MediaContainer", data)
     current = mc.get("version", "unknown")
 
@@ -226,7 +219,10 @@ def _check_plex() -> dict:
 
 
 def _check_tmdb() -> dict:
-    key = cfg("TMDB_API_KEY")
+    key = cfg("TMDB_API_KEY", "")
+    if not key:
+        return {"name": "TMDB", "url": "https://www.themoviedb.org", "reachable": False, "not_configured": True}
+
     data = _get("https://api.themoviedb.org/3/configuration", params={"api_key": key}, timeout=6)
     return {
         "name": "TMDB",
@@ -243,19 +239,22 @@ def _check_tmdb() -> dict:
 
 def collect() -> dict:
     log.info("Checking linked services...")
-    checkers = [_check_sonarr, _check_radarr, _check_overseerr, _check_tautulli, _check_plex, _check_tmdb]
     services = []
-    for fn in checkers:
-        try:
-            result = fn()
-        except Exception as e:
-            log.warning(f"Service check failed for {fn.__name__}: {e}")
-            result = {"name": fn.__name__.replace("_check_", "").title(), "reachable": False}
+
+    for result in _check_sonarr_instances() + _check_radarr_instances():
         services.append(result)
 
-    reachable = sum(1 for s in services if s.get("reachable"))
-    updates = sum(1 for s in services if s.get("update_available"))
-    log.info(f"Services: {reachable}/{len(services)} reachable, {updates} update(s) available")
+    for fn in [_check_overseerr, _check_tautulli, _check_plex, _check_tmdb]:
+        try:
+            services.append(fn())
+        except Exception as e:
+            log.warning(f"Service check failed for {fn.__name__}: {e}")
+            services.append({"name": fn.__name__.replace("_check_", "").title(), "reachable": False})
+
+    configured = [s for s in services if not s.get("not_configured")]
+    reachable = sum(1 for s in configured if s.get("reachable"))
+    updates = sum(1 for s in configured if s.get("update_available"))
+    log.info(f"Services: {reachable}/{len(configured)} reachable, {updates} update(s) available")
 
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),

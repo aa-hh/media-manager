@@ -1,9 +1,13 @@
 """
-Loads configuration from ~/homepage/config/homepage.env with optional
-overrides from ~/media-manager/.env.
+Loads configuration from config/.env inside the project root.
+Env vars already in the environment take precedence over the file.
+Also checks HOMEPAGE_VAR_* fallback names for backwards compatibility
+with existing installs that source config from Homepage dashboard.
 """
 import os
 from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 def _load_env_file(path: Path) -> None:
@@ -24,16 +28,25 @@ def _load_env_file(path: Path) -> None:
 
 
 def load() -> None:
-    _load_env_file(Path.home() / "homepage" / "config" / "homepage.env")
-    _load_env_file(Path.home() / "media-manager" / ".env")
-
-
-def require(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Required environment variable '{name}' is not set")
-    return value
+    _load_env_file(_PROJECT_ROOT / "config" / ".env")
 
 
 def get(name: str, default: str = "") -> str:
-    return os.getenv(name, default)
+    """Get env var. For API key vars, also checks HOMEPAGE_VAR_ prefixed name."""
+    val = os.getenv(name, "")
+    if val:
+        return val
+    # Backwards compat: Homepage dashboard used HOMEPAGE_VAR_ prefix
+    if not name.startswith("HOMEPAGE_VAR_"):
+        fallback = f"HOMEPAGE_VAR_{name}"
+        val = os.getenv(fallback, "")
+        if val:
+            return val
+    return default
+
+
+def require(name: str) -> str:
+    value = get(name)
+    if not value:
+        raise RuntimeError(f"Required environment variable '{name}' is not set")
+    return value

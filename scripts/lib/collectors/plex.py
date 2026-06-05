@@ -105,6 +105,19 @@ def _fetch_all_history(
     return all_entries
 
 
+def get_library_sections(url: str, token: str) -> list[dict]:
+    """Returns [{id, title, type}] by calling /library/sections."""
+    root = _get(url, token, "/library/sections")
+    sections = []
+    for directory in root:
+        key = directory.attrib.get("key")
+        title = directory.attrib.get("title", "")
+        type_ = directory.attrib.get("type", "")
+        if key:
+            sections.append({"id": key, "title": title, "type": type_})
+    return sections
+
+
 def _get_machine_id(url: str, token: str) -> str:
     try:
         root = _get(url, token, "/identity")
@@ -113,17 +126,32 @@ def _get_machine_id(url: str, token: str) -> str:
         return ""
 
 
-def fetch(url: str, token: str, name_map: dict | None = None) -> dict:
+def fetch(
+    url: str,
+    token: str,
+    name_map: dict | None = None,
+    tv_section_ids: list[str] | None = None,
+    movie_section_ids: list[str] | None = None,
+) -> dict:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    if tv_section_ids is None:
+        tv_section_ids = ["1"]
+    if movie_section_ids is None:
+        movie_section_ids = ["2"]
 
     machine_id = _get_machine_id(url, token)
     accounts = _get_accounts(url, token)
     log.info(f"Plex: found {len(accounts)} accounts")
 
-    # Build title → metadata maps for matching
-    show_meta = _get_library_metadata(url, token, "1")
-    movie_meta = _get_library_metadata(url, token, "2")
+    # Build title → metadata maps for matching (merge across all section IDs)
+    show_meta: dict = {}
+    for sid in tv_section_ids:
+        show_meta.update(_get_library_metadata(url, token, sid))
+    movie_meta: dict = {}
+    for sid in movie_section_ids:
+        movie_meta.update(_get_library_metadata(url, token, sid))
     log.info(f"Plex: indexed {len(show_meta)} shows, {len(movie_meta)} movies")
 
     tv_watch: dict[int, dict] = {}
@@ -135,8 +163,10 @@ def fetch(url: str, token: str, name_map: dict | None = None) -> dict:
         raw_name = account["name"]
         fname = (name_map or {}).get(raw_name, raw_name)
 
-        # TV history
-        tv_history = _fetch_all_history(url, token, aid, "1")
+        # TV history — aggregate across all TV section IDs
+        tv_history = []
+        for sid in tv_section_ids:
+            tv_history.extend(_fetch_all_history(url, token, aid, sid))
         log.info(f"Plex: account '{fname}' has {len(tv_history)} TV plays")
 
         # Aggregate by grandparentTitle (show) and by season
@@ -222,8 +252,10 @@ def fetch(url: str, token: str, name_map: dict | None = None) -> dict:
                 "last_watched": last_watched,
             }
 
-        # Movie history
-        movie_history = _fetch_all_history(url, token, aid, "2")
+        # Movie history — aggregate across all movie section IDs
+        movie_history = []
+        for sid in movie_section_ids:
+            movie_history.extend(_fetch_all_history(url, token, aid, sid))
         log.info(f"Plex: account '{fname}' has {len(movie_history)} movie plays")
 
         by_movie: dict[str, dict] = {}
