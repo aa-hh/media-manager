@@ -30,17 +30,16 @@ PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/app/project"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
 
 PIPELINE_JOBS = [
-    {"id": "sonarr",    "name": "Sonarr",           "description": "Fetch TV library from Sonarr"},
-    {"id": "radarr",    "name": "Radarr",            "description": "Fetch movie library from Radarr"},
-    {"id": "overseerr", "name": "Overseerr",         "description": "Fetch requests & watchlists from Overseerr"},
-    {"id": "plex",      "name": "Plex",              "description": "Fetch watch history from Plex"},
-    {"id": "tautulli",  "name": "Tautulli",          "description": "Fetch watch data from Tautulli"},
-    {"id": "tmdb",      "name": "TMDB",              "description": "Fetch metadata & artwork from TMDB"},
-    {"id": "services",  "name": "Services",          "description": "Check health & version of all services"},
-    {"id": "build",     "name": "Build",             "description": "Rebuild data files from cached raw data"},
-    {"id": "generate",  "name": "Generate",          "description": "Regenerate dashboard HTML"},
-    {"id": "collect",   "name": "Collect All",       "description": "Run all collectors then build"},
-    {"id": "all",       "name": "Full Pipeline",     "description": "Collect all + build + generate"},
+    {"id": "sonarr",    "name": "Sonarr",             "description": "Fetch TV library from Sonarr"},
+    {"id": "radarr",    "name": "Radarr",              "description": "Fetch movie library from Radarr"},
+    {"id": "overseerr", "name": "Overseerr",           "description": "Fetch requests & watchlists from Overseerr"},
+    {"id": "watch",     "name": "Watch History",       "description": "Fetch watch history from Plex and/or Tautulli"},
+    {"id": "tmdb",      "name": "TMDB",                "description": "Fetch metadata & artwork from TMDB"},
+    {"id": "services",  "name": "Services",            "description": "Check health & version of all services"},
+    {"id": "build",     "name": "Build",               "description": "Rebuild data files from cached raw data"},
+    {"id": "generate",  "name": "Generate",            "description": "Regenerate dashboard HTML"},
+    {"id": "collect",   "name": "Collect All",         "description": "Run all collectors then build"},
+    {"id": "all",       "name": "Full Pipeline",       "description": "Collect all + build + generate"},
 ]
 _running_jobs: dict[str, bool] = {}
 _jobs_lock = asyncio.Lock()

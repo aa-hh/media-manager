@@ -176,45 +176,39 @@ def fetch_overseerr(_build: bool = True) -> None:
         build()
 
 
-def fetch_plex(_build: bool = True) -> None:
-    log.info("=== Plex fetch started ===")
+def fetch_watch_history(_build: bool = True) -> None:
+    """Fetch watch history from Plex and/or Tautulli — whichever are configured."""
+    log.info("=== Watch history fetch started ===")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
     plex_to_canonical, _ = _load_user_identities()
-    data: dict = {"tv": {}, "movie": {}, "users": [], "machine_id": "", "tv_seasons": {}}
+
+    plex_data: dict = {"tv": {}, "movie": {}, "users": [], "machine_id": "", "tv_seasons": {}}
     if c["plex_url"] and c["plex_token"]:
         try:
-            data = plex.fetch(c["plex_url"], c["plex_token"], name_map=plex_to_canonical,
-                              tv_section_ids=c["tv_section_ids"], movie_section_ids=c["movie_section_ids"])
+            plex_data = plex.fetch(c["plex_url"], c["plex_token"], name_map=plex_to_canonical,
+                                   tv_section_ids=c["tv_section_ids"], movie_section_ids=c["movie_section_ids"])
             log.info("Plex watch data fetched")
         except Exception as e:
             log.warn(f"Plex unavailable: {e}")
     else:
         log.info("Plex not configured — skipping")
-    (DATA_DIR / "raw_plex.json").write_text(json.dumps(data, indent=2))
-    _record_run("plex")
-    log.info("=== Plex fetch complete ===")
-    if _build:
-        build()
+    (DATA_DIR / "raw_plex.json").write_text(json.dumps(plex_data, indent=2))
 
-
-def fetch_tautulli(_build: bool = True) -> None:
-    log.info("=== Tautulli fetch started ===")
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    c = _cfg()
-    data: dict = {"tv": {}, "movie": {}, "users": [], "tv_seasons": {}}
+    tautulli_data: dict = {"tv": {}, "movie": {}, "users": [], "tv_seasons": {}}
     if c["tautulli_url"] and c["tautulli_key"]:
         try:
-            data = tautulli.fetch(c["tautulli_url"], c["tautulli_key"],
-                                  tv_section_ids=c["tv_section_ids"], movie_section_ids=c["movie_section_ids"])
-            log.info("Tautulli data fetched")
+            tautulli_data = tautulli.fetch(c["tautulli_url"], c["tautulli_key"],
+                                           tv_section_ids=c["tv_section_ids"], movie_section_ids=c["movie_section_ids"])
+            log.info("Tautulli watch data fetched")
         except Exception as e:
             log.warn(f"Tautulli unavailable: {e}")
     else:
         log.info("Tautulli not configured — skipping")
-    (DATA_DIR / "raw_tautulli.json").write_text(json.dumps(data, indent=2))
-    _record_run("tautulli")
-    log.info("=== Tautulli fetch complete ===")
+    (DATA_DIR / "raw_tautulli.json").write_text(json.dumps(tautulli_data, indent=2))
+
+    _record_run("watch")
+    log.info("=== Watch history fetch complete ===")
     if _build:
         build()
 
@@ -319,8 +313,7 @@ def collect() -> None:
     fetch_radarr(_build=False)
     fetch_tmdb(_build=False)
     fetch_overseerr(_build=False)
-    fetch_plex(_build=False)
-    fetch_tautulli(_build=False)
+    fetch_watch_history(_build=False)
     fetch_services()
     build()
 
@@ -463,8 +456,7 @@ COMMANDS: dict = {
     "sonarr":    fetch_sonarr,
     "radarr":    fetch_radarr,
     "overseerr": fetch_overseerr,
-    "plex":      fetch_plex,
-    "tautulli":  fetch_tautulli,
+    "watch":     fetch_watch_history,
     "tmdb":      fetch_tmdb,
     "services":  fetch_services,
     "build":     build,
