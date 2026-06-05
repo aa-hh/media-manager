@@ -148,7 +148,7 @@
   {% set qps = format_metrics.quality_profiles %}
   <div class="section">
     <div class="section-title">Format Performance</div>
-    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Direct play rate by source file format. Rows appear as new formats are played.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Delivery resolution breakdown by source format. Quality columns show what resolution the client actually received.</p>
     <div class="table-card" style="overflow:auto">
       <table class="data-table" style="min-width:560px">
         <thead>
@@ -190,7 +190,7 @@
             <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
             {% for qp in qps %}
               {% set pct = row.quality_pcts.get(qp, 0) %}
-              <td style="text-align:right;font-size:.82rem;color:{% if qp == 'Original' %}{{ 'var(--green)' if pct >= 80 else ('var(--yellow)' if pct >= 50 else 'var(--red)') }}{% else %}{{ 'var(--red)' if pct >= 50 else ('var(--yellow)' if pct >= 20 else 'var(--text-muted)') }}{% endif %}">{{ pct }}%</td>
+              <td style="text-align:right;font-size:.82rem;color:var(--text-muted)">{{ pct if pct else '—' }}{% if pct %}%{% endif %}</td>
             {% endfor %}
           </tr>
           {% endfor %}

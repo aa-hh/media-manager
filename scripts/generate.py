@@ -258,6 +258,15 @@ def _compute_format_metrics(db_path: Path) -> dict:
     if not db_path.exists():
         return {}
 
+    def _norm_res(r: str) -> str:
+        r = (r or "").lower().strip()
+        if r in ("4k", "2160", "2160p"):   return "4K"
+        if r in ("1080", "1080p"):          return "1080p"
+        if r in ("720", "720p"):            return "720p"
+        if r in ("576", "576p"):            return "576p"
+        if r in ("480", "480p"):            return "480p"
+        return r.upper() if r else "?"
+
     try:
         con = sqlite3.connect(db_path)
         rows = con.execute("""
@@ -266,7 +275,7 @@ def _compute_format_metrics(db_path: Path) -> dict:
                 src_video_resolution,
                 src_hdr_type,
                 transcode_decision,
-                quality_profile
+                stream_video_resolution
             FROM plays
             WHERE event = 'play'
         """).fetchall()
@@ -282,7 +291,7 @@ def _compute_format_metrics(db_path: Path) -> dict:
         "quality_counts": defaultdict(int),
     })
 
-    for codec, res, hdr, decision, qp in rows:
+    for codec, res, hdr, decision, stream_res in rows:
         codec = (codec or "").lower()
         res   = (res or "").lower()
         hdr   = (hdr or "").strip()
@@ -322,16 +331,14 @@ def _compute_format_metrics(db_path: Path) -> dict:
 
         g = groups[key]
         d = (decision or "").lower()
+        delivered = _norm_res(stream_res) if stream_res else res_label
         if d == "direct play":
             g["direct"] += 1
-            g["quality_counts"]["Original"] += 1
         elif d == "copy":
             g["copy"] += 1
-            g["quality_counts"]["Original"] += 1
         elif d == "transcode":
             g["transcode"] += 1
-            profile = (qp or "Original").strip()
-            g["quality_counts"][profile] += 1
+        g["quality_counts"][delivered] += 1
 
     def _fmt_rank(fmt: str) -> tuple:
         s = fmt.lower()
@@ -359,15 +366,12 @@ def _compute_format_metrics(db_path: Path) -> dict:
 
     def _quality_sort_key(qp: str) -> int:
         s = qp.lower()
-        if "original" in s or "max" in s:
-            return 9999
-        for pat in (r"(\d+)k", r"(\d{3,4})p", r"(\d+)\s*mbps.*?(\d+)p"):
+        if "4k" in s or "2160" in s: return 2160
+        for pat in (r"(\d{3,4})p", r"(\d{3,4})"):
             m = re.search(pat, s)
             if m:
-                val = int(m.group(m.lastindex))
-                return val * (2160 if "4k" in s else 1)
-        m = re.search(r"(\d+)", s)
-        return int(m.group(1)) if m else 0
+                return int(m.group(1))
+        return 0
 
     # Collect all quality profiles seen across every format, sorted
     all_profiles: set = set()
