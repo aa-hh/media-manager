@@ -593,6 +593,46 @@ async def settings_get_services():
     })
 
 
+@app.get("/api/settings/jobs")
+async def settings_get_jobs():
+    """Proxy Seerr jobs list."""
+    cfg = _read_config_env()
+    seerr_url = cfg.get("SEERR_URL", "").rstrip("/")
+    seerr_key = cfg.get("SEERR_API_KEY", "")
+    if not seerr_url or not seerr_key:
+        return JSONResponse({"error": "Overseerr not configured."}, status_code=503)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{seerr_url}/api/v1/settings/jobs",
+                headers={"X-Api-Key": seerr_key},
+            )
+            r.raise_for_status()
+            return JSONResponse(r.json())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.post("/api/settings/jobs/{job_id}/run")
+async def settings_run_job(job_id: str):
+    """Trigger a Seerr job immediately."""
+    cfg = _read_config_env()
+    seerr_url = cfg.get("SEERR_URL", "").rstrip("/")
+    seerr_key = cfg.get("SEERR_API_KEY", "")
+    if not seerr_url or not seerr_key:
+        return JSONResponse({"error": "Overseerr not configured."}, status_code=503)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{seerr_url}/api/v1/settings/jobs/{job_id}/run",
+                headers={"X-Api-Key": seerr_key},
+            )
+            r.raise_for_status()
+            return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
 @app.post("/api/settings/config")
 async def settings_save_config(request: Request):
     body = await request.json()
