@@ -221,7 +221,7 @@
             <td><label class="toggle"><input type="checkbox" id="tog-plex" disabled checked><span class="toggle__slider"></span></label></td>
           </tr>
           <tr>
-            <td><div class="svc-name">Overseerr</div></td>
+            <td><div class="svc-name">Seerr</div></td>
             <td>Request tracking, watchlists, request management</td>
             <td><label class="toggle"><input type="checkbox" id="tog-overseerr" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
           </tr>
@@ -496,7 +496,7 @@ function renderCredBlocks() {
     { id: 'sonarr', label: 'Sonarr', hasUrl: true, urlPlaceholder: 'http://localhost:8989', keyPlaceholder: 'API key', multi: true },
     { id: 'radarr', label: 'Radarr', hasUrl: true, urlPlaceholder: 'http://localhost:7878', keyPlaceholder: 'API key', multi: true },
     { id: 'tmdb',   label: 'TMDB',   hasUrl: false, keyPlaceholder: 'API key — get one free at themoviedb.org', multi: false },
-    { id: 'overseerr', label: 'Overseerr / Seerr', hasUrl: true, urlPlaceholder: 'http://localhost:5055', keyPlaceholder: 'API key', multi: false },
+    { id: 'overseerr', label: 'Seerr', hasUrl: true, urlPlaceholder: 'http://localhost:5055', keyPlaceholder: 'API key', multi: false },
     { id: 'tautulli',  label: 'Tautulli', hasUrl: true, urlPlaceholder: 'http://localhost:8181', keyPlaceholder: 'API key', multi: false },
   ];
 
@@ -787,7 +787,7 @@ function renderSummary() {
     { label: 'Sonarr', ok: isConfigured('sonarr') },
     { label: 'Radarr', ok: isConfigured('radarr') },
     { label: 'TMDB', ok: isConfigured('tmdb') },
-    { label: 'Overseerr', ok: isConfigured('overseerr') },
+    { label: 'Seerr', ok: isConfigured('overseerr') },
     { label: 'Tautulli', ok: isConfigured('tautulli') },
     { label: 'Plex library assignment', ok: !!state.plexTvSections },
     { label: 'Storage capacity', ok: !!document.getElementById('storageGB')?.value },

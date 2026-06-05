@@ -381,7 +381,7 @@
           <div class="settings-section__header">
             <div>
               <div class="settings-section__title">User Mappings</div>
-              <div class="settings-section__subtitle">Map Plex display names to Overseerr accounts</div>
+              <div class="settings-section__subtitle">Map Plex display names to Seerr accounts</div>
             </div>
             <button class="btn btn--primary" onclick="openNewMapping()">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -393,7 +393,7 @@
               <tr>
                 <th>Canonical name</th>
                 <th>Plex name(s)</th>
-                <th>Overseerr user</th>
+                <th>Seerr user</th>
                 <th style="width:80px"></th>
               </tr>
             </thead>
@@ -415,7 +415,7 @@
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Overseerr user</label>
+                <label class="form-label">Seerr user</label>
                 <select class="form-select" id="new-seerr-select" style="min-width:200px">
                   <option value="">— select user —</option>
                 </select>
@@ -473,7 +473,7 @@ const SVC_DEFS = [
   { id: 'radarr',   label: 'Radarr',          desc: 'Movie library',                 icon: '../assets/icons/radarr.svg',  multi: true,  hasUrl: true },
   { id: 'plex',     label: 'Plex',            desc: 'Watch history & user data',     icon: '../assets/icons/plex.svg',    multi: false, hasUrl: true  },
   { id: 'tmdb',     label: 'TMDB',            desc: 'Posters, ratings & overviews',  icon: '../assets/icons/tmdb.svg',    multi: false, hasUrl: false },
-  { id: 'seerr',    label: 'Overseerr',       desc: 'Requests & watchlists',         icon: '../assets/icons/seerr.svg',   multi: false, hasUrl: true  },
+  { id: 'seerr',    label: 'Seerr',       desc: 'Requests & watchlists',         icon: '../assets/icons/seerr.svg',   multi: false, hasUrl: true  },
   { id: 'tautulli', label: 'Tautulli',        desc: 'Enhanced watch stats',          icon: null,                          multi: false, hasUrl: true  },
 ];
 
