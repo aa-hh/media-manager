@@ -383,4 +383,4 @@ Media Manager is not a file browser.
 
 It is a media intelligence platform.
 
-The objective is to transform storage consumption into actionable information using metadata, ratings, collections, posters, and viewing behavior.
+The objective is to transform storage consumption into actionable information using metadata, ratings, collections, posters, and viewing behavior.# media-manager
