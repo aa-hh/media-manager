@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Media Manager — Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f13; --card: #18181f; --border: #2a2a35; --muted: #6b7280;
+      --text: #e5e7eb; --accent: #e5a00d; --danger: #ef4444; --success: #22c55e;
+      --input-bg: #111118;
+    }
+    body { min-height: 100vh; background: var(--bg); font-family: system-ui, sans-serif; color: var(--text); }
+
+    .shell { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+
+    .logo { font-size: 1.25rem; font-weight: 700; letter-spacing: -.5px; margin-bottom: .25rem; }
+    .logo-sub { color: var(--muted); font-size: .875rem; margin-bottom: 2rem; }
+
+    /* Progress bar */
+    .progress { display: flex; gap: .5rem; margin-bottom: 2.5rem; }
+    .progress__step {
+      flex: 1; height: 4px; border-radius: 2px; background: var(--border);
+      transition: background .25s;
+    }
+    .progress__step--done { background: var(--accent); }
+    .progress__step--active { background: var(--accent); opacity: .5; }
+
+    .step-label { font-size: .75rem; color: var(--muted); margin-bottom: 1.25rem; letter-spacing: .05em; text-transform: uppercase; }
+
+    /* Cards */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.25rem; }
+    .card__title { font-weight: 600; margin-bottom: .75rem; }
+    .card__body { color: var(--muted); font-size: .9rem; line-height: 1.6; }
+
+    /* Capability matrix */
+    .matrix { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    .matrix th { text-align: left; padding: .5rem .75rem; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+    .matrix td { padding: .65rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .matrix tr:last-child td { border-bottom: none; }
+    .matrix .svc-name { font-weight: 600; }
+    .matrix .svc-badge { font-size: .7rem; padding: .15rem .45rem; border-radius: 4px; background: #1e2030; color: var(--muted); }
+    .matrix .svc-badge--req { background: #1a2515; color: #86efac; }
+    .matrix .svc-badge--auto { background: #1a1a2e; color: #818cf8; }
+
+    /* Toggle switch */
+    .toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle__slider {
+      position: absolute; inset: 0; cursor: pointer;
+      background: var(--border); border-radius: 22px; transition: background .2s;
+    }
+    .toggle__slider::before {
+      content: ''; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: transform .2s;
+    }
+    .toggle input:checked + .toggle__slider { background: var(--accent); }
+    .toggle input:checked + .toggle__slider::before { transform: translateX(18px); }
+    .toggle input:disabled + .toggle__slider { opacity: .5; cursor: default; }
+
+    /* Credential blocks */
+    .cred-block { margin-bottom: 1.5rem; }
+    .cred-block__label { font-weight: 600; font-size: .95rem; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+    .cred-row { display: flex; gap: .5rem; margin-bottom: .5rem; align-items: flex-start; flex-wrap: wrap; }
+    .cred-row input { flex: 1; min-width: 120px; }
+    .cred-row input[data-role="url"] { flex: 2; }
+
+    input, select {
+      background: var(--input-bg); border: 1px solid var(--border); border-radius: 7px;
+      color: var(--text); padding: .55rem .75rem; font-size: .9rem; width: 100%;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input::placeholder { color: var(--muted); }
+
+    .field-group { margin-bottom: 1rem; }
+    .field-group label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
+
+    /* Buttons */
+    button { cursor: pointer; border: none; border-radius: 7px; font-size: .9rem; font-weight: 600; padding: .55rem 1.1rem; transition: opacity .15s; }
+    button:disabled { opacity: .45; cursor: default; }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: #4b5563; }
+    .btn-test { background: #1a2030; color: #93c5fd; border: 1px solid #1e3050; font-size: .8rem; padding: .45rem .8rem; white-space: nowrap; }
+    .btn-test:hover:not(:disabled) { background: #1e2840; }
+    .btn-add { background: transparent; color: var(--muted); border: 1px dashed var(--border); font-size: .8rem; padding: .4rem .8rem; width: 100%; margin-top: .25rem; }
+    .btn-add:hover:not(:disabled) { color: var(--text); border-color: #4b5563; }
+
+    /* Test result badges */
+    .test-result { font-size: .78rem; padding: .3rem .6rem; border-radius: 5px; white-space: nowrap; }
+    .test-result--ok { background: #14291a; color: var(--success); }
+    .test-result--err { background: #2a1414; color: var(--danger); }
+    .test-result--checking { background: #1a1a2a; color: var(--muted); }
+
+    /* Navigation */
+    .nav { display: flex; justify-content: space-between; margin-top: 2rem; }
+
+    /* Alerts */
+    .alert { border-radius: 8px; padding: .75rem 1rem; font-size: .875rem; margin-bottom: 1.25rem; }
+    .alert--err { background: #2a1414; border: 1px solid #7f1d1d; color: #fca5a5; }
+    .alert--info { background: #1a1a2e; border: 1px solid #312e81; color: #a5b4fc; }
+
+    /* Summary */
+    .summary-item { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+    .summary-item:last-child { border-bottom: none; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot--ok { background: var(--success); }
+    .dot--skip { background: var(--border); }
+
+    /* Plex server picker */
+    .plex-picker { margin-top: 1rem; }
+    .plex-picker select { margin-bottom: .5rem; }
+
+    /* Progress spinner */
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: .4rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Library assignment */
+    .lib-assign { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: none; }
+    .lib-assign.visible { display: block; }
+    .lib-assign label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: .35rem; margin-top: .75rem; }
+
+    /* Step visibility */
+    .step { display: none; }
+    .step.active { display: block; }
+
+    /* Plex sign-in card */
+    .plex-btn {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: var(--accent); color: #000; font-weight: 600; font-size: .95rem;
+      padding: .7rem 1.5rem; border-radius: 8px; border: none; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .plex-btn:hover:not(:disabled) { opacity: .85; }
+    .plex-btn:disabled { opacity: .5; cursor: default; }
+    .plex-connected { color: var(--success); font-size: .9rem; margin-top: .75rem; }
+    .min-note { font-size: .8rem; color: var(--muted); margin-top: 1rem; padding: .6rem .85rem; background: #111118; border-radius: 6px; border-left: 3px solid var(--border); }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <div class="logo">Media Manager</div>
+  <div class="logo-sub">Initial setup</div>
+
+  <div class="progress">
+    <div class="progress__step progress__step--active" id="prog0"></div>
+    <div class="progress__step" id="prog1"></div>
+    <div class="progress__step" id="prog2"></div>
+    <div class="progress__step" id="prog3"></div>
+    <div class="progress__step" id="prog4"></div>
+  </div>
+
+  <!-- ─── Step 1: Plex sign-in ───────────────────────────────────────────── -->
+  <div class="step active" id="step0">
+    <div class="step-label">Step 1 of 5 — Connect Plex</div>
+    <div class="card">
+      <div class="card__title">Sign in with Plex</div>
+      <div class="card__body" style="margin-bottom:1.25rem">
+        Plex is used to authenticate you and your users. After sign-in, you can select which Plex server this dashboard connects to.
+      </div>
+      <button class="plex-btn" id="plexBtn" onclick="startPlexLogin()">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M10 2C5.58 2 2 5.58 2 10s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 9.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+        </svg>
+        Sign in with Plex
+      </button>
+      <div id="plexStatus" style="margin-top:.75rem;font-size:.85rem;color:var(--muted)"></div>
+
+      <div class="plex-picker" id="serverPicker" style="display:none">
+        <label style="font-size:.85rem;color:var(--muted);display:block;margin-bottom:.35rem">Which Plex server?</label>
+        <select id="serverSelect" onchange="onServerSelect()"></select>
+        <label style="font-size:.85rem;color:var(--muted);display:block;margin-bottom:.35rem;margin-top:.75rem">Connection URL</label>
+        <select id="connSelect"></select>
+        <div class="plex-connected" id="plexConnected" style="display:none">
+          ✓ Connected — <span id="plexServerName"></span>
+        </div>
+      </div>
+    </div>
+    <div class="nav">
+      <span></span>
+      <button class="btn-primary" id="step0Next" disabled onclick="goStep(1)">Next →</button>
+    </div>
+  </div>
+
+  <!-- ─── Step 2: Capability matrix ─────────────────────────────────────── -->
+  <div class="step" id="step1">
+    <div class="step-label">Step 2 of 5 — Choose services</div>
+    <div class="card">
+      <div class="card__title">Which services do you have?</div>
+      <div class="card__body" style="margin-bottom:1rem">Toggle the services you want to connect. You can change these later in Settings.</div>
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>What it enables</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="svc-name">Sonarr</div><span class="svc-badge svc-badge--req">required*</span></td>
+            <td>TV library, episode details, TV storage stats</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-sonarr" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
+          </tr>
+          <tr>
+            <td><div class="svc-name">Radarr</div><span class="svc-badge svc-badge--req">required*</span></td>
+            <td>Movie library, movie storage stats</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-radarr" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
+          </tr>
+          <tr>
+            <td><div class="svc-name">TMDB</div><span class="svc-badge svc-badge--req">recommended</span></td>
+            <td>Posters, ratings, and descriptions for all media</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-tmdb" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
+          </tr>
+          <tr>
+            <td><div class="svc-name">Plex</div><span class="svc-badge svc-badge--auto">auto</span></td>
+            <td>Watch history, "watched by" per user, user profiles</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-plex" disabled checked><span class="toggle__slider"></span></label></td>
+          </tr>
+          <tr>
+            <td><div class="svc-name">Overseerr</div></td>
+            <td>Request tracking, watchlists, request management</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-overseerr" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
+          </tr>
+          <tr>
+            <td><div class="svc-name">Tautulli</div></td>
+            <td>Enhanced watch stats — more accurate play counts and durations</td>
+            <td><label class="toggle"><input type="checkbox" id="tog-tautulli" onchange="onToggle()"><span class="toggle__slider"></span></label></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="min-note">* At least one of Sonarr or Radarr is required. TMDB is strongly recommended — without it, posters and metadata won't be shown.</div>
+    </div>
+    <div id="step1Alert" class="alert alert--err" style="display:none"></div>
+    <div class="nav">
+      <button class="btn-ghost" onclick="goStep(0)">← Back</button>
+      <button class="btn-primary" id="step1Next" onclick="validateStep1()">Next →</button>
+    </div>
+  </div>
+
+  <!-- ─── Step 3: Credentials ────────────────────────────────────────────── -->
+  <div class="step" id="step2">
+    <div class="step-label">Step 3 of 5 — Credentials</div>
+    <div id="credBlocks"></div>
+    <div id="step2Alert" class="alert alert--err" style="display:none"></div>
+    <div class="nav">
+      <button class="btn-ghost" onclick="goStep(1)">← Back</button>
+      <button class="btn-primary" id="step2Next" onclick="validateStep2()">Next →</button>
+    </div>
+  </div>
+
+  <!-- ─── Step 4: Storage ────────────────────────────────────────────────── -->
+  <div class="step" id="step3">
+    <div class="step-label">Step 4 of 5 — Storage capacity</div>
+    <div class="card">
+      <div class="card__title">Storage capacity</div>
+      <div class="card__body" style="margin-bottom:1rem">Used for the storage growth forecasting chart. Leave blank to skip.</div>
+      <div class="field-group">
+        <label>Total storage capacity (GB)</label>
+        <input type="number" id="storageGB" placeholder="e.g. 4096" min="1">
+      </div>
+    </div>
+    <div class="nav">
+      <button class="btn-ghost" onclick="goStep(2)">← Back</button>
+      <button class="btn-primary" onclick="goStep(4)">Next →</button>
+    </div>
+  </div>
+
+  <!-- ─── Step 5: Review & save ──────────────────────────────────────────── -->
+  <div class="step" id="step4">
+    <div class="step-label">Step 5 of 5 — Review & save</div>
+    <div class="card">
+      <div class="card__title">Configuration summary</div>
+      <div id="summaryList"></div>
+    </div>
+    <div id="step4Alert" class="alert alert--err" style="display:none"></div>
+    <div id="saveStatus" style="display:none;text-align:center;padding:1.5rem 0;color:var(--muted);font-size:.9rem"></div>
+    <div class="nav">
+      <button class="btn-ghost" id="backBtn4" onclick="goStep(3)">← Back</button>
+      <button class="btn-primary" id="saveBtn" onclick="saveConfig()">Save &amp; launch</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const state = {
+  plexToken: '',
+  plexUrl: '',
+  plexServerName: '',
+  plexTvSections: '',
+  plexMovieSections: '',
+  plexLibraryTested: false,
+  credentials: {}, // { sonarr: [{url, key, tested, version}], ... }
+  toggles: {},
+};
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+let currentStep = 0;
+
+function goStep(n) {
+  document.getElementById(`step${currentStep}`).classList.remove('active');
+  document.getElementById(`step${n}`).classList.add('active');
+  currentStep = n;
+  updateProgress();
+  if (n === 2) renderCredBlocks();
+  if (n === 4) renderSummary();
+}
+
+function updateProgress() {
+  for (let i = 0; i < 5; i++) {
+    const el = document.getElementById(`prog${i}`);
+    el.className = 'progress__step';
+    if (i < currentStep) el.classList.add('progress__step--done');
+    else if (i === currentStep) el.classList.add('progress__step--active');
+  }
+}
+
+// ── Step 1: Plex OAuth ───────────────────────────────────────────────────────
+const CLIENT_ID = document.currentScript?.dataset?.clientId || (() => {
+  // Read from a meta tag injected by the server, or fall back to a random one
+  const m = document.querySelector('meta[name="plex-client-id"]');
+  return m ? m.content : 'media-manager-setup-' + Math.random().toString(36).slice(2);
+})();
+
+let pollTimer = null;
+
+function startPlexLogin() {
+  const btn = document.getElementById('plexBtn');
+  const status = document.getElementById('plexStatus');
+  btn.disabled = true;
+  status.textContent = 'Opening Plex…';
+
+  fetch('https://plex.tv/api/v2/pins', {
+    method: 'POST',
+    headers: {
+      'X-Plex-Client-Identifier': CLIENT_ID,
+      'X-Plex-Product': 'Media Manager',
+      'X-Plex-Version': '1.0',
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'strong=true',
+  })
+  .then(r => r.json())
+  .then(pin => {
+    const callbackUrl = window.location.origin + '/auth/waiting';
+    const authUrl = 'https://app.plex.tv/auth#?' +
+      'clientID=' + encodeURIComponent(CLIENT_ID) +
+      '&code=' + encodeURIComponent(pin.code) +
+      '&forwardUrl=' + encodeURIComponent(callbackUrl) +
+      '&context[device][product]=Media+Manager';
+
+    const w = 800, h = 700;
+    const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
+    const top = Math.round(window.screenY + (window.outerHeight - h) / 2);
+    window.open(authUrl, 'plex-auth', `width=${w},height=${h},left=${left},top=${top},popup=yes`);
+    status.textContent = 'Waiting for Plex sign-in…';
+    pollForToken(pin.id);
+  })
+  .catch(() => {
+    status.textContent = 'Could not reach Plex. Try again.';
+    btn.disabled = false;
+  });
+}
+
+function pollForToken(pinId) {
+  let attempts = 0;
+  pollTimer = setInterval(() => {
+    attempts++;
+    if (attempts > 60) {
+      clearInterval(pollTimer);
+      document.getElementById('plexStatus').textContent = 'Timed out. Please try again.';
+      document.getElementById('plexBtn').disabled = false;
+      return;
+    }
+    fetch('https://plex.tv/api/v2/pins/' + pinId, {
+      headers: { 'X-Plex-Client-Identifier': CLIENT_ID, 'Accept': 'application/json' },
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.authToken) {
+        clearInterval(pollTimer);
+        onPlexTokenReceived(data.authToken);
+      }
+    })
+    .catch(() => {});
+  }, 3000);
+}
+
+function onPlexTokenReceived(token) {
+  state.plexToken = token;
+  document.getElementById('plexStatus').textContent = 'Fetching your Plex servers…';
+
+  fetch('/api/setup/plex-servers?token=' + encodeURIComponent(token))
+  .then(r => r.json())
+  .then(data => {
+    if (data.error || !data.servers?.length) {
+      document.getElementById('plexStatus').textContent = data.error || 'No Plex servers found.';
+      document.getElementById('plexBtn').disabled = false;
+      return;
+    }
+    document.getElementById('plexStatus').textContent = '';
+    renderServerPicker(data.servers);
+  })
+  .catch(() => {
+    document.getElementById('plexStatus').textContent = 'Could not fetch server list.';
+    document.getElementById('plexBtn').disabled = false;
+  });
+}
+
+function renderServerPicker(servers) {
+  const picker = document.getElementById('serverPicker');
+  const sel = document.getElementById('serverSelect');
+  sel.innerHTML = '';
+  window._plexServers = servers;
+
+  servers.forEach((srv, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = srv.name;
+    sel.appendChild(opt);
+  });
+
+  picker.style.display = 'block';
+  onServerSelect();
+}
+
+function onServerSelect() {
+  const idx = parseInt(document.getElementById('serverSelect').value, 10);
+  const srv = window._plexServers[idx];
+  const connSel = document.getElementById('connSelect');
+  connSel.innerHTML = '';
+
+  srv.connections.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.uri;
+    const tag = c.relay ? 'relay' : (c.local ? 'local' : 'remote');
+    opt.textContent = `${c.uri}  [${tag}]`;
+    connSel.appendChild(opt);
+  });
+
+  // Auto-pick: prefer non-relay, non-local (remote direct)
+  const preferred = srv.connections.find(c => !c.relay && !c.local)
+    || srv.connections.find(c => !c.relay)
+    || srv.connections[0];
+  if (preferred) connSel.value = preferred.uri;
+
+  onConnSelect();
+}
+
+function onConnSelect() {
+  const idx = parseInt(document.getElementById('serverSelect').value, 10);
+  const srv = window._plexServers[idx];
+  state.plexUrl = document.getElementById('connSelect').value;
+  state.plexServerName = srv.name;
+
+  document.getElementById('plexConnected').style.display = 'block';
+  document.getElementById('plexServerName').textContent = srv.name;
+  document.getElementById('step0Next').disabled = false;
+}
+
+document.getElementById('connSelect')?.addEventListener('change', onConnSelect);
+
+// ── Step 2: Toggle validation ────────────────────────────────────────────────
+function onToggle() {
+  // nothing blocking here — validation happens on Next
+}
+
+function validateStep1() {
+  const sonarr = document.getElementById('tog-sonarr').checked;
+  const radarr = document.getElementById('tog-radarr').checked;
+  const alert = document.getElementById('step1Alert');
+  if (!sonarr && !radarr) {
+    alert.style.display = 'block';
+    alert.textContent = 'You must enable at least Sonarr or Radarr.';
+    return;
+  }
+  alert.style.display = 'none';
+  goStep(2);
+}
+
+// ── Step 3: Credentials ──────────────────────────────────────────────────────
+function renderCredBlocks() {
+  const container = document.getElementById('credBlocks');
+  container.innerHTML = '';
+
+  const services = [
+    { id: 'sonarr', label: 'Sonarr', hasUrl: true, urlPlaceholder: 'http://localhost:8989', keyPlaceholder: 'API key', multi: true },
+    { id: 'radarr', label: 'Radarr', hasUrl: true, urlPlaceholder: 'http://localhost:7878', keyPlaceholder: 'API key', multi: true },
+    { id: 'tmdb',   label: 'TMDB',   hasUrl: false, keyPlaceholder: 'API key — get one free at themoviedb.org', multi: false },
+    { id: 'overseerr', label: 'Overseerr / Seerr', hasUrl: true, urlPlaceholder: 'http://localhost:5055', keyPlaceholder: 'API key', multi: false },
+    { id: 'tautulli',  label: 'Tautulli', hasUrl: true, urlPlaceholder: 'http://localhost:8181', keyPlaceholder: 'API key', multi: false },
+  ];
+
+  services.forEach(svc => {
+    if (!document.getElementById(`tog-${svc.id}`)?.checked) return;
+
+    if (!state.credentials[svc.id]) state.credentials[svc.id] = [{ url: '', key: '', tested: false, version: '' }];
+
+    const block = document.createElement('div');
+    block.className = 'card cred-block';
+    block.id = `cred-block-${svc.id}`;
+    block.innerHTML = `<div class="card__title">${svc.label}</div>`;
+
+    const rowsContainer = document.createElement('div');
+    rowsContainer.id = `rows-${svc.id}`;
+
+    state.credentials[svc.id].forEach((row, i) => {
+      rowsContainer.appendChild(makeCredRow(svc, i));
+    });
+
+    block.appendChild(rowsContainer);
+
+    if (svc.multi) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn-add';
+      addBtn.textContent = `+ Add another ${svc.label} instance`;
+      addBtn.onclick = () => addCredRow(svc);
+      block.appendChild(addBtn);
+    }
+
+    // Plex library assignment (shown after Plex test passes)
+    if (svc.id === 'plex') {
+      const libDiv = document.createElement('div');
+      libDiv.className = 'lib-assign';
+      libDiv.id = 'lib-assign';
+      libDiv.innerHTML = `
+        <label>TV Shows library</label>
+        <select id="lib-tv"></select>
+        <label>Movies library</label>
+        <select id="lib-movie"></select>
+      `;
+      block.appendChild(libDiv);
+    }
+
+    container.appendChild(block);
+  });
+
+  // Plex block (always shown, pre-filled)
+  if (state.plexUrl) {
+    if (!state.credentials['plex']) state.credentials['plex'] = [{ url: state.plexUrl, key: state.plexToken, tested: false, version: '' }];
+    const plexSvc = { id: 'plex', label: 'Plex', hasUrl: true, urlPlaceholder: 'http://…:32400', keyPlaceholder: 'Plex token', multi: false };
+    const block = document.createElement('div');
+    block.className = 'card cred-block';
+    block.id = 'cred-block-plex';
+    block.innerHTML = `<div class="card__title">Plex</div><div class="card__body" style="margin-bottom:.75rem;font-size:.85rem">Pre-filled from sign-in. Test to confirm, then assign your libraries.</div>`;
+
+    const rowsContainer = document.createElement('div');
+    rowsContainer.id = 'rows-plex';
+    rowsContainer.appendChild(makePlexRow());
+    block.appendChild(rowsContainer);
+
+    const libDiv = document.createElement('div');
+    libDiv.className = 'lib-assign';
+    libDiv.id = 'lib-assign';
+    libDiv.innerHTML = `
+      <label>TV Shows library</label>
+      <select id="lib-tv"><option value="">— test connection first —</option></select>
+      <label>Movies library</label>
+      <select id="lib-movie"><option value="">— test connection first —</option></select>
+    `;
+    block.appendChild(libDiv);
+    container.appendChild(block);
+  }
+}
+
+function makeCredRow(svc, idx) {
+  const row = document.createElement('div');
+  row.className = 'cred-row';
+  row.id = `row-${svc.id}-${idx}`;
+
+  if (svc.hasUrl) {
+    const urlInput = document.createElement('input');
+    urlInput.type = 'text';
+    urlInput.dataset.role = 'url';
+    urlInput.placeholder = svc.urlPlaceholder;
+    urlInput.value = state.credentials[svc.id][idx]?.url || '';
+    urlInput.oninput = e => { state.credentials[svc.id][idx].url = e.target.value; state.credentials[svc.id][idx].tested = false; };
+    row.appendChild(urlInput);
+  }
+
+  const keyInput = document.createElement('input');
+  keyInput.type = 'password';
+  keyInput.placeholder = svc.keyPlaceholder;
+  keyInput.value = state.credentials[svc.id][idx]?.key || '';
+  keyInput.oninput = e => { state.credentials[svc.id][idx].key = e.target.value; state.credentials[svc.id][idx].tested = false; };
+  row.appendChild(keyInput);
+
+  const testBtn = document.createElement('button');
+  testBtn.className = 'btn-test';
+  testBtn.textContent = 'Test';
+  testBtn.onclick = () => testService(svc.id, idx, testBtn, resultSpan);
+  row.appendChild(testBtn);
+
+  const resultSpan = document.createElement('span');
+  resultSpan.className = 'test-result';
+  if (state.credentials[svc.id][idx]?.tested) {
+    resultSpan.className = 'test-result test-result--ok';
+    resultSpan.textContent = state.credentials[svc.id][idx].version + ' ✓';
+  }
+  row.appendChild(resultSpan);
+
+  return row;
+}
+
+function makePlexRow() {
+  const row = document.createElement('div');
+  row.className = 'cred-row';
+  row.id = 'row-plex-0';
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.dataset.role = 'url';
+  urlInput.placeholder = 'Plex server URL';
+  urlInput.value = state.plexUrl;
+  urlInput.oninput = e => { state.plexUrl = e.target.value; state.plexLibraryTested = false; };
+  row.appendChild(urlInput);
+
+  const keyInput = document.createElement('input');
+  keyInput.type = 'password';
+  keyInput.placeholder = 'Plex token';
+  keyInput.value = state.plexToken;
+  keyInput.oninput = e => { state.plexToken = e.target.value; state.plexLibraryTested = false; };
+  row.appendChild(keyInput);
+
+  const testBtn = document.createElement('button');
+  testBtn.className = 'btn-test';
+  testBtn.textContent = 'Test';
+  const resultSpan = document.createElement('span');
+  resultSpan.className = 'test-result';
+  testBtn.onclick = () => testPlexAndLoadLibraries(testBtn, resultSpan);
+  row.appendChild(testBtn);
+  row.appendChild(resultSpan);
+
+  return row;
+}
+
+function addCredRow(svc) {
+  state.credentials[svc.id].push({ url: '', key: '', tested: false, version: '' });
+  const idx = state.credentials[svc.id].length - 1;
+  document.getElementById(`rows-${svc.id}`).appendChild(makeCredRow(svc, idx));
+}
+
+async function testService(svcId, idx, btn, resultEl) {
+  const cred = state.credentials[svcId][idx];
+  btn.disabled = true;
+  resultEl.className = 'test-result test-result--checking';
+  resultEl.innerHTML = '<span class="spinner"></span>checking…';
+
+  try {
+    const r = await fetch('/api/setup/test-service', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: svcId, url: cred.url, key: cred.key }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      cred.tested = true;
+      cred.version = data.version || '✓';
+      resultEl.className = 'test-result test-result--ok';
+      resultEl.textContent = cred.version + ' ✓';
+    } else {
+      cred.tested = false;
+      resultEl.className = 'test-result test-result--err';
+      resultEl.textContent = data.error || 'Connection failed';
+    }
+  } catch {
+    resultEl.className = 'test-result test-result--err';
+    resultEl.textContent = 'Request failed';
+  }
+  btn.disabled = false;
+}
+
+async function testPlexAndLoadLibraries(btn, resultEl) {
+  btn.disabled = true;
+  resultEl.className = 'test-result test-result--checking';
+  resultEl.innerHTML = '<span class="spinner"></span>checking…';
+
+  try {
+    const r = await fetch('/api/setup/test-service', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: 'plex', url: state.plexUrl, key: state.plexToken }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      resultEl.className = 'test-result test-result--err';
+      resultEl.textContent = data.error || 'Connection failed';
+      btn.disabled = false;
+      return;
+    }
+    resultEl.className = 'test-result test-result--ok';
+    resultEl.textContent = (data.version || '✓') + ' ✓';
+
+    // Load libraries
+    const lr = await fetch(`/api/setup/plex-libraries?url=${encodeURIComponent(state.plexUrl)}&token=${encodeURIComponent(state.plexToken)}`);
+    const ld = await lr.json();
+    if (ld.libraries) {
+      populateLibrarySelects(ld.libraries);
+      document.getElementById('lib-assign').classList.add('visible');
+      state.plexLibraryTested = true;
+    }
+  } catch {
+    resultEl.className = 'test-result test-result--err';
+    resultEl.textContent = 'Request failed';
+  }
+  btn.disabled = false;
+}
+
+function populateLibrarySelects(libraries) {
+  const tvSel = document.getElementById('lib-tv');
+  const movieSel = document.getElementById('lib-movie');
+  tvSel.innerHTML = '';
+  movieSel.innerHTML = '';
+
+  libraries.forEach(lib => {
+    const opt1 = document.createElement('option');
+    opt1.value = lib.id;
+    opt1.textContent = lib.title + (lib.type ? ` (${lib.type})` : '');
+    tvSel.appendChild(opt1);
+
+    const opt2 = opt1.cloneNode(true);
+    movieSel.appendChild(opt2);
+  });
+
+  // Auto-select by type
+  const tvLib = libraries.find(l => l.type === 'show');
+  const movieLib = libraries.find(l => l.type === 'movie');
+  if (tvLib) tvSel.value = tvLib.id;
+  if (movieLib) movieSel.value = movieLib.id;
+}
+
+function validateStep2() {
+  const alert = document.getElementById('step2Alert');
+
+  // Check Sonarr — at least one row must be tested if toggled
+  for (const svcId of ['sonarr', 'radarr', 'tmdb', 'overseerr', 'tautulli']) {
+    const tog = document.getElementById(`tog-${svcId}`);
+    if (!tog || !tog.checked) continue;
+    const creds = state.credentials[svcId] || [];
+    const anyTested = creds.some(c => c.tested);
+    if (!anyTested) {
+      alert.style.display = 'block';
+      alert.textContent = `Please test your ${svcId.charAt(0).toUpperCase() + svcId.slice(1)} connection before continuing.`;
+      return;
+    }
+  }
+
+  // Check Plex library assignment if Plex is configured
+  if (state.plexUrl && !state.plexLibraryTested) {
+    alert.style.display = 'block';
+    alert.textContent = 'Please test your Plex connection and assign libraries before continuing.';
+    return;
+  }
+
+  alert.style.display = 'none';
+
+  // Store library selections
+  if (state.plexLibraryTested) {
+    state.plexTvSections = document.getElementById('lib-tv')?.value || '';
+    state.plexMovieSections = document.getElementById('lib-movie')?.value || '';
+  }
+
+  goStep(3);
+}
+
+// ── Step 5: Summary ──────────────────────────────────────────────────────────
+function renderSummary() {
+  const list = document.getElementById('summaryList');
+  list.innerHTML = '';
+
+  const items = [
+    { label: 'Plex', ok: !!state.plexUrl },
+    { label: 'Sonarr', ok: isConfigured('sonarr') },
+    { label: 'Radarr', ok: isConfigured('radarr') },
+    { label: 'TMDB', ok: isConfigured('tmdb') },
+    { label: 'Overseerr', ok: isConfigured('overseerr') },
+    { label: 'Tautulli', ok: isConfigured('tautulli') },
+    { label: 'Plex library assignment', ok: !!state.plexTvSections },
+    { label: 'Storage capacity', ok: !!document.getElementById('storageGB')?.value },
+  ];
+
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'summary-item';
+    div.innerHTML = `<div class="dot dot--${item.ok ? 'ok' : 'skip'}"></div><span>${item.label}</span><span style="margin-left:auto;font-size:.8rem;color:var(--${item.ok ? 'success' : 'muted'})">${item.ok ? 'configured' : 'skipped'}</span>`;
+    list.appendChild(div);
+  });
+}
+
+function isConfigured(svcId) {
+  const tog = document.getElementById(`tog-${svcId}`);
+  if (!tog?.checked) return false;
+  const creds = state.credentials[svcId] || [];
+  return creds.some(c => c.tested);
+}
+
+// ── Save ─────────────────────────────────────────────────────────────────────
+async function saveConfig() {
+  const saveBtn = document.getElementById('saveBtn');
+  const backBtn = document.getElementById('backBtn4');
+  const statusEl = document.getElementById('saveStatus');
+  const alertEl = document.getElementById('step4Alert');
+
+  saveBtn.disabled = true;
+  backBtn.disabled = true;
+  alertEl.style.display = 'none';
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<span class="spinner"></span> Saving configuration…';
+
+  const body = {};
+
+  if (state.plexUrl) {
+    body['PLEX_URL'] = state.plexUrl;
+    body['PLEX_TOKEN'] = state.plexToken;
+  }
+  if (state.plexTvSections) body['PLEX_TV_SECTIONS'] = state.plexTvSections;
+  if (state.plexMovieSections) body['PLEX_MOVIE_SECTIONS'] = state.plexMovieSections;
+
+  for (const svcId of ['sonarr', 'radarr', 'overseerr', 'tautulli']) {
+    const creds = state.credentials[svcId] || [];
+    const valid = creds.filter(c => c.tested);
+    if (!valid.length) continue;
+
+    if (svcId === 'sonarr') {
+      body['SONARR_URL'] = valid.map(c => c.url).join(',');
+      body['SONARR_API_KEY'] = valid.map(c => c.key).join(',');
+    } else if (svcId === 'radarr') {
+      body['RADARR_URL'] = valid.map(c => c.url).join(',');
+      body['RADARR_API_KEY'] = valid.map(c => c.key).join(',');
+    } else if (svcId === 'overseerr') {
+      body['SEERR_URL'] = valid[0].url;
+      body['SEERR_API_KEY'] = valid[0].key;
+    } else if (svcId === 'tautulli') {
+      body['TAUTULLI_URL'] = valid[0].url;
+      body['TAUTULLI_API_KEY'] = valid[0].key;
+    }
+  }
+
+  // TMDB — key only
+  const tmdbCreds = state.credentials['tmdb'] || [];
+  const tmdbValid = tmdbCreds.find(c => c.tested);
+  if (tmdbValid) body['TMDB_API_KEY'] = tmdbValid.key;
+
+  const storage = document.getElementById('storageGB')?.value;
+  if (storage) body['STORAGE_CAPACITY_GB'] = storage;
+
+  try {
+    const r = await fetch('/api/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      alertEl.style.display = 'block';
+      alertEl.textContent = data.detail || 'Save failed. Check your configuration.';
+      statusEl.style.display = 'none';
+      saveBtn.disabled = false;
+      backBtn.disabled = false;
+      return;
+    }
+    statusEl.innerHTML = '✓ Saved. Redirecting to the dashboard…';
+    setTimeout(() => { window.location.href = '/'; }, 1500);
+  } catch {
+    alertEl.style.display = 'block';
+    alertEl.textContent = 'Network error — could not save configuration.';
+    statusEl.style.display = 'none';
+    saveBtn.disabled = false;
+    backBtn.disabled = false;
+  }
+}
+
+// TMDB toggle is in the matrix — wire it up on load
+window.addEventListener('DOMContentLoaded', () => {
+  const tmdbTog = document.getElementById('tog-tmdb');
+  if (tmdbTog) {
+    tmdbTog.addEventListener('change', () => {
+      if (tmdbTog.checked && !state.credentials['tmdb']) {
+        state.credentials['tmdb'] = [{ url: '', key: '', tested: false, version: '' }];
+      }
+    });
+  }
+});
+</script>
+</body>
+</html>

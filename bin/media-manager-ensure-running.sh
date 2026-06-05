@@ -3,14 +3,15 @@
 # Ensure the media-manager container is running.
 # Safe to run at @reboot and on a regular cron interval.
 #
-# Crontab entries:
-#   @reboot  /mnt/mpathe/ahhhhhhh/media-manager/bin/media-manager-ensure-running.sh >>/mnt/mpathe/ahhhhhhh/media-manager/logs/ensure.log 2>&1
-#   */5 * * * * /mnt/mpathe/ahhhhhhh/media-manager/bin/media-manager-ensure-running.sh >>/mnt/mpathe/ahhhhhhh/media-manager/logs/ensure.log 2>&1
+# Crontab entries (adjust path to wherever you cloned the repo):
+#   @reboot  /path/to/media-manager/bin/media-manager-ensure-running.sh >>/path/to/media-manager/logs/ensure.log 2>&1
+#   */5 * * * * /path/to/media-manager/bin/media-manager-ensure-running.sh >>/path/to/media-manager/logs/ensure.log 2>&1
 
 set -euo pipefail
 
-COMPOSE_FILE="/mnt/mpathe/ahhhhhhh/media-manager/compose.yaml"
-LOG_DIR="/mnt/mpathe/ahhhhhhh/media-manager/logs"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COMPOSE_FILE="$ROOT/compose.yaml"
+LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }

@@ -56,38 +56,75 @@ def collect() -> None:
     plex_to_canonical, seerr_id_to_canonical = _load_user_identities()
     log.info(f"User identity map: {plex_to_canonical}")
 
-    sonarr_url = config.require("SONARR_URL")
-    sonarr_key = config.require("HOMEPAGE_VAR_SONARR_API_KEY")
-    radarr_url = config.require("RADARR_URL")
-    radarr_key = config.require("HOMEPAGE_VAR_RADARR_API_KEY")
-    seerr_url = config.require("SEERR_URL")
-    seerr_key = config.require("HOMEPAGE_VAR_SEERR_API_KEY")
+    # --- Service config (all optional except at least one arr) ---
+    sonarr_urls = [u.strip() for u in config.get("SONARR_URL", "").split(",") if u.strip()]
+    sonarr_keys = [k.strip() for k in config.get("SONARR_API_KEY", "").split(",") if k.strip()]
+    radarr_urls = [u.strip() for u in config.get("RADARR_URL", "").split(",") if u.strip()]
+    radarr_keys = [k.strip() for k in config.get("RADARR_API_KEY", "").split(",") if k.strip()]
+    seerr_url = config.get("SEERR_URL", "")
+    seerr_key = config.get("SEERR_API_KEY", "")
     tautulli_url = config.get("TAUTULLI_URL", "")
     tautulli_key = config.get("TAUTULLI_API_KEY", "")
     plex_url = config.get("PLEX_URL", "")
-    plex_token = config.get("HOMEPAGE_VAR_PLEX_TOKEN", "")
-    tmdb_key = config.require("TMDB_API_KEY")
+    plex_token = config.get("PLEX_TOKEN", "")
+    tmdb_key = config.get("TMDB_API_KEY", "")
 
-    # Fetch from Sonarr and Radarr
-    sonarr_items = sonarr.fetch(sonarr_url, sonarr_key)
-    radarr_items = radarr.fetch(radarr_url, radarr_key)
+    if not sonarr_urls and not radarr_urls:
+        raise RuntimeError("At least one of SONARR_URL or RADARR_URL must be configured.")
 
-    # Fetch TMDB enrichment
-    tv_tmdb = tmdb.enrich(sonarr_items, "tv", tmdb_key, CACHE_DIR / "tmdb_tv.json")
-    movie_tmdb = tmdb.enrich(radarr_items, "movie", tmdb_key, CACHE_DIR / "tmdb_movies.json")
+    # Plex section IDs
+    tv_section_ids = [s.strip() for s in config.get("PLEX_TV_SECTIONS", "1").split(",") if s.strip()]
+    movie_section_ids = [s.strip() for s in config.get("PLEX_MOVIE_SECTIONS", "2").split(",") if s.strip()]
 
-    # Fetch Overseerr requests + watchlist
-    try:
-        ov_requests, ov_users = overseerr.fetch(seerr_url, seerr_key)
-    except Exception as e:
-        log.warn(f"Overseerr unavailable: {e}")
-        ov_requests, ov_users = [], {}
+    # Fetch from Sonarr (support multiple instances, merge results)
+    sonarr_items: list = []
+    if sonarr_urls:
+        for i, s_url in enumerate(sonarr_urls):
+            s_key = sonarr_keys[i] if i < len(sonarr_keys) else (sonarr_keys[0] if sonarr_keys else "")
+            try:
+                sonarr_items.extend(sonarr.fetch(s_url, s_key))
+            except Exception as e:
+                log.warn(f"Sonarr instance {s_url} unavailable: {e}")
+    else:
+        log.info("Sonarr not configured — skipping TV library collection")
+
+    # Fetch from Radarr (support multiple instances, merge results)
+    radarr_items: list = []
+    if radarr_urls:
+        for i, r_url in enumerate(radarr_urls):
+            r_key = radarr_keys[i] if i < len(radarr_keys) else (radarr_keys[0] if radarr_keys else "")
+            try:
+                radarr_items.extend(radarr.fetch(r_url, r_key))
+            except Exception as e:
+                log.warn(f"Radarr instance {r_url} unavailable: {e}")
+    else:
+        log.info("Radarr not configured — skipping movie library collection")
+
+    # Fetch TMDB enrichment (optional)
+    if tmdb_key:
+        tv_tmdb = tmdb.enrich(sonarr_items, "tv", tmdb_key, CACHE_DIR / "tmdb_tv.json")
+        movie_tmdb = tmdb.enrich(radarr_items, "movie", tmdb_key, CACHE_DIR / "tmdb_movies.json")
+    else:
+        log.info("TMDB_API_KEY not set — skipping TMDB enrichment")
+        tv_tmdb = {}
+        movie_tmdb = {}
+
+    # Fetch Overseerr requests + watchlist (optional)
+    ov_requests, ov_users = [], {}
+    if seerr_url and seerr_key:
+        try:
+            ov_requests, ov_users = overseerr.fetch(seerr_url, seerr_key)
+        except Exception as e:
+            log.warn(f"Overseerr unavailable: {e}")
+    else:
+        log.info("Overseerr not configured — skipping request collection")
 
     watchlist: set[tuple] = set()
-    try:
-        watchlist = overseerr.fetch_watchlist(seerr_url, seerr_key, ov_users)
-    except Exception as e:
-        log.warn(f"Overseerr watchlist unavailable: {e}")
+    if seerr_url and seerr_key:
+        try:
+            watchlist = overseerr.fetch_watchlist(seerr_url, seerr_key, ov_users)
+        except Exception as e:
+            log.warn(f"Overseerr watchlist unavailable: {e}")
     (DATA_DIR / "watchlist.json").write_text(
         json.dumps([[mt, tid] for mt, tid in sorted(watchlist)], indent=2)
     )
@@ -100,14 +137,16 @@ def collect() -> None:
 
     if plex_url and plex_token:
         try:
-            plex_data = plex.fetch(plex_url, plex_token, name_map=plex_to_canonical)
+            plex_data = plex.fetch(plex_url, plex_token, name_map=plex_to_canonical,
+                                   tv_section_ids=tv_section_ids, movie_section_ids=movie_section_ids)
             log.info("Plex watch data fetched")
         except Exception as e:
             log.warn(f"Plex watch history unavailable: {e}")
 
     if tautulli_url and tautulli_key:
         try:
-            tautulli_watch = tautulli.fetch(tautulli_url, tautulli_key)
+            tautulli_watch = tautulli.fetch(tautulli_url, tautulli_key,
+                                            tv_section_ids=tv_section_ids, movie_section_ids=movie_section_ids)
             log.info("Tautulli watch data fetched")
         except Exception as e:
             log.warn(f"Tautulli unavailable: {e}")
