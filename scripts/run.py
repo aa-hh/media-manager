@@ -272,6 +272,75 @@ def fetch_services() -> None:
     log.info("=== Services check complete ===")
 
 
+# ── Webhook helpers ───────────────────────────────────────────────────────────
+
+def _load_webhook_transcode() -> tuple[dict, dict]:
+    """Aggregate webhook_plays.db into (transcode_tv, transcode_movie) dicts."""
+    import sqlite3
+    db_path = DATA_DIR / "webhook_plays.db"
+    if not db_path.exists():
+        return {}, {}
+
+    tv: dict[int, dict] = {}
+    movie: dict[int, dict] = {}
+
+    try:
+        con = sqlite3.connect(db_path)
+        rows = con.execute("""
+            SELECT tmdb_id, media_type, transcode_decision, quality_profile
+            FROM plays
+            WHERE tmdb_id IS NOT NULL AND event = 'play'
+        """).fetchall()
+        con.close()
+    except Exception as e:
+        log.warn(f"Could not read webhook_plays.db: {e}")
+        return {}, {}
+
+    for tmdb_id, media_type, decision, qp in rows:
+        mt = (media_type or "").lower()
+        store = tv if mt in ("episode", "show", "tv") else movie
+        decision = (decision or "").lower()
+        qp = qp or ""
+
+        existing = store.get(tmdb_id, {})
+        merged_q = dict(existing.get("transcode_qualities", {}))
+        if decision == "transcode" and qp:
+            merged_q[qp] = merged_q.get(qp, 0) + 1
+
+        store[tmdb_id] = {
+            "direct":              existing.get("direct", 0)    + (1 if decision == "direct play" else 0),
+            "transcode":           existing.get("transcode", 0) + (1 if decision == "transcode" else 0),
+            "copy":                existing.get("copy", 0)      + (1 if decision == "copy" else 0),
+            "total":               existing.get("total", 0)     + 1,
+            "transcode_qualities": merged_q,
+            "avg_watch_pct":       None,
+        }
+
+    return tv, movie
+
+
+def _merge_transcode(base: dict, overlay: dict) -> dict:
+    """Merge overlay counts into base, combining counts for shared tmdb_ids."""
+    merged = dict(base)
+    for tid, stats in overlay.items():
+        if tid not in merged:
+            merged[tid] = stats
+        else:
+            existing = merged[tid]
+            merged_q = dict(existing.get("transcode_qualities", {}))
+            for qp, cnt in stats.get("transcode_qualities", {}).items():
+                merged_q[qp] = merged_q.get(qp, 0) + cnt
+            merged[tid] = {
+                "direct":              existing.get("direct", 0)    + stats.get("direct", 0),
+                "transcode":           existing.get("transcode", 0) + stats.get("transcode", 0),
+                "copy":                existing.get("copy", 0)      + stats.get("copy", 0),
+                "total":               existing.get("total", 0)     + stats.get("total", 0),
+                "transcode_qualities": merged_q,
+                "avg_watch_pct":       existing.get("avg_watch_pct"),
+            }
+    return merged
+
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 
 def build() -> None:
@@ -312,6 +381,13 @@ def build() -> None:
     raw_transcode = tautulli_data.get("transcode_stats", {})
     transcode_tv    = _int_key_dict(raw_transcode.get("tv", {}))
     transcode_movie = _int_key_dict(raw_transcode.get("movie", {}))
+
+    # Supplement with webhook play events from the DB
+    wh_tv, wh_movie = _load_webhook_transcode()
+    if wh_tv or wh_movie:
+        transcode_tv    = _merge_transcode(transcode_tv, wh_tv)
+        transcode_movie = _merge_transcode(transcode_movie, wh_movie)
+        log.info(f"Webhook DB: merged {len(wh_tv)} TV + {len(wh_movie)} movie transcode entries")
 
     (DATA_DIR / "watchlist.json").write_text(json.dumps(watchlist, indent=2))
 

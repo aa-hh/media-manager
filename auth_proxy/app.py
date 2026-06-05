@@ -4,8 +4,9 @@ import subprocess
 import json
 from pathlib import Path
 from secrets import compare_digest
-from datetime import timezone
+from datetime import datetime, timezone
 import httpx
+import aiosqlite
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi import HTTPException
@@ -28,6 +29,7 @@ CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "/app/config"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/app/project"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
+PLAYS_DB = DATA_DIR / "webhook_plays.db"
 
 PIPELINE_JOBS = [
     {"id": "sonarr",    "name": "Sonarr",             "description": "Fetch TV library from Sonarr"},
@@ -90,9 +92,53 @@ async def _run_pipeline_scheduled() -> None:
             _running_jobs["all"] = False
 
 
+async def _init_plays_db() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS plays (
+                id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                event                    TEXT,
+                event_at                 INTEGER,
+                rating_key               TEXT,
+                tmdb_id                  INTEGER,
+                media_type               TEXT,
+                transcode_decision       TEXT,
+                video_decision           TEXT,
+                audio_decision           TEXT,
+                subtitle_decision        TEXT,
+                quality_profile          TEXT,
+                src_container            TEXT,
+                src_video_codec          TEXT,
+                src_video_bitrate        TEXT,
+                src_video_resolution     TEXT,
+                src_video_bit_depth      TEXT,
+                src_hdr_type             TEXT,
+                src_audio_codec          TEXT,
+                src_audio_channels       TEXT,
+                stream_container         TEXT,
+                stream_video_codec       TEXT,
+                stream_video_bitrate     TEXT,
+                stream_video_resolution  TEXT,
+                stream_audio_codec       TEXT,
+                stream_audio_channels    TEXT,
+                client_user              TEXT,
+                client_friendly_name     TEXT,
+                client_platform          TEXT,
+                client_platform_version  TEXT,
+                client_product           TEXT,
+                client_player            TEXT,
+                client_device            TEXT
+            )
+        """)
+        await db.commit()
+
+
 @app.on_event("startup")
 async def startup():
     global server_machine_id
+
+    await _init_plays_db()
 
     # Start the APScheduler; fall back to default schedule if not explicitly configured
     _scheduler.start()
@@ -119,6 +165,10 @@ async def startup():
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
+
+    # Tautulli webhook — no auth required (internal service)
+    if path == "/api/tautulli/webhook":
+        return await call_next(request)
 
     # Setup wizard redirect — must come before auth check
     if not _is_setup_complete():
@@ -764,6 +814,114 @@ async def settings_save_config(request: Request):
         _write_config_env(config_values)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+# ── Tautulli webhook ──────────────────────────────────────────────────────────
+
+async def _plex_hdr_type(rating_key: str) -> str | None:
+    """Query Plex for HDR type: 'DV', 'HDR10', 'HLG', or None for SDR."""
+    if not PLEX_SERVER_URL or not PLEX_TOKEN or not rating_key:
+        return None
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=5) as client:
+            resp = await client.get(
+                f"{PLEX_SERVER_URL}/library/metadata/{rating_key}",
+                headers={"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"},
+            )
+            streams = (
+                resp.json()
+                .get("MediaContainer", {})
+                .get("Metadata", [{}])[0]
+                .get("Media", [{}])[0]
+                .get("Part", [{}])[0]
+                .get("Stream", [])
+            )
+        for s in streams:
+            if s.get("streamType") != 1:
+                continue
+            if s.get("DOVIProfile"):
+                return "DV"
+            trc = s.get("colorTrc", "")
+            if trc == "smpte2084":
+                return "HDR10"
+            if trc == "arib-std-b67":
+                return "HLG"
+        return None
+    except Exception:
+        return None
+
+
+@app.post("/api/tautulli/webhook")
+async def tautulli_webhook(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    media = body.get("media", {})
+    playback = body.get("playback", {})
+    src = body.get("source_quality", {})
+    stream = body.get("stream_quality", {})
+    client = body.get("client", {})
+
+    rating_key = media.get("rating_key", "")
+    tmdb_id_raw = media.get("tmdb_id")
+    try:
+        tmdb_id = int(tmdb_id_raw) if tmdb_id_raw else None
+    except (ValueError, TypeError):
+        tmdb_id = None
+
+    hdr_type = await _plex_hdr_type(rating_key)
+
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        await db.execute("""
+            INSERT INTO plays (
+                event, event_at, rating_key, tmdb_id, media_type,
+                transcode_decision, video_decision, audio_decision, subtitle_decision,
+                quality_profile,
+                src_container, src_video_codec, src_video_bitrate, src_video_resolution,
+                src_video_bit_depth, src_hdr_type, src_audio_codec, src_audio_channels,
+                stream_container, stream_video_codec, stream_video_bitrate,
+                stream_video_resolution, stream_audio_codec, stream_audio_channels,
+                client_user, client_friendly_name, client_platform, client_platform_version,
+                client_product, client_player, client_device
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            body.get("event"),
+            body.get("event_at"),
+            rating_key,
+            tmdb_id,
+            media.get("media_type"),
+            playback.get("transcode_decision"),
+            playback.get("video_decision"),
+            playback.get("audio_decision"),
+            playback.get("subtitle_decision"),
+            playback.get("quality_profile"),
+            src.get("container"),
+            src.get("video_codec"),
+            src.get("video_bitrate"),
+            src.get("video_resolution"),
+            src.get("video_bit_depth"),
+            hdr_type,
+            src.get("audio_codec"),
+            src.get("audio_channels"),
+            stream.get("stream_container"),
+            stream.get("stream_video_codec"),
+            stream.get("stream_video_bitrate"),
+            stream.get("stream_video_resolution"),
+            stream.get("stream_audio_codec"),
+            stream.get("stream_audio_channels"),
+            client.get("user"),
+            client.get("friendly_name"),
+            client.get("platform"),
+            client.get("platform_version"),
+            client.get("product"),
+            client.get("player"),
+            client.get("device"),
+        ))
+        await db.commit()
+
     return JSONResponse({"ok": True})
 
 
