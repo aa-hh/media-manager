@@ -76,6 +76,36 @@ def _load_raw(name: str, default):
         return default
 
 
+def _remap_names(watch_data: dict, name_map: dict) -> dict:
+    """Apply a name_map to the user keys inside a watch data dict (tv/movie/tv_seasons/users)."""
+    def _remap_store(store: dict) -> dict:
+        out: dict = {}
+        for tmdb_id, by_user in store.items():
+            remapped: dict = {}
+            for user, stats in by_user.items():
+                remapped[name_map.get(user, user)] = stats
+            out[tmdb_id] = remapped
+        return out
+
+    def _remap_seasons(seasons: dict) -> dict:
+        out: dict = {}
+        for tmdb_id, by_season in seasons.items():
+            out[tmdb_id] = {}
+            for snum, by_user in by_season.items():
+                out[tmdb_id][snum] = {name_map.get(u, u): s for u, s in by_user.items()}
+        return out
+
+    return {
+        "tv":         _remap_store(watch_data.get("tv", {})),
+        "movie":      _remap_store(watch_data.get("movie", {})),
+        "tv_seasons": _remap_seasons(watch_data.get("tv_seasons", {})),
+        "users": [
+            {**u, "friendly_name": name_map.get(u["friendly_name"], u["friendly_name"])}
+            for u in watch_data.get("users", [])
+        ],
+    }
+
+
 def _cfg() -> dict:
     return {
         "sonarr_urls": [u.strip() for u in config.get("SONARR_URL", "").split(",") if u.strip()],
@@ -200,6 +230,8 @@ def fetch_watch_history(_build: bool = True) -> None:
         try:
             tautulli_data = tautulli.fetch(c["tautulli_url"], c["tautulli_key"],
                                            tv_section_ids=c["tv_section_ids"], movie_section_ids=c["movie_section_ids"])
+            if plex_to_canonical:
+                tautulli_data = _remap_names(tautulli_data, plex_to_canonical)
             log.info("Tautulli watch data fetched")
         except Exception as e:
             log.warn(f"Tautulli unavailable: {e}")

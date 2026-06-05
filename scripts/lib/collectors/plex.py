@@ -41,39 +41,52 @@ def _get_accounts(url: str, token: str) -> list[dict]:
     return accounts
 
 
+def _extract_tmdb_id(item_el: ET.Element) -> int | None:
+    for guid in item_el.findall("Guid"):
+        gid = guid.attrib.get("id", "")
+        if gid.startswith("tmdb://"):
+            try:
+                return int(gid.split("tmdb://")[1].split("?")[0])
+            except (ValueError, IndexError):
+                pass
+    return None
+
+
 def _get_library_metadata(url: str, token: str, section_id: str) -> dict:
     """
     Returns { title: { ratingKey, tmdb_id, leaf_count } }.
-    TMDB IDs come from individual metadata requests (Guid children).
+    Uses includeGuids=1 on the /all endpoint to get TMDB IDs in a single
+    request. Falls back to per-item requests for any that still lack one.
     """
-    root = _get(url, token, f"/library/sections/{section_id}/all",
-                {"X-Plex-Container-Start": "0", "X-Plex-Container-Size": "1000"})
+    root = _get(url, token, f"/library/sections/{section_id}/all", {
+        "X-Plex-Container-Start": "0",
+        "X-Plex-Container-Size": "1000",
+        "includeGuids": "1",
+    })
     items = {}
     for item in root:
         title = item.attrib.get("title", "")
         rating_key = item.attrib.get("ratingKey")
         leaf_count = int(item.attrib.get("leafCount") or 0)
-        if title and rating_key:
-            items[title] = {
-                "rating_key": rating_key,
-                "tmdb_id": None,
-                "leaf_count": leaf_count,
-            }
+        if not title or not rating_key:
+            continue
+        items[title] = {
+            "rating_key": rating_key,
+            "tmdb_id": _extract_tmdb_id(item),
+            "leaf_count": leaf_count,
+        }
 
-    # Fetch TMDB IDs from individual metadata (Guid children not in /all response)
-    for title, meta in items.items():
+    # Fall back to individual metadata requests for anything still missing a TMDB ID
+    missing = [t for t, m in items.items() if m["tmdb_id"] is None]
+    if missing:
+        log.info(f"Plex: fetching individual metadata for {len(missing)} items without TMDB GUID")
+    for title in missing:
+        meta = items[title]
         try:
             detail = _get(url, token, f"/library/metadata/{meta['rating_key']}")
-            item_el = list(detail)[0] if len(list(detail)) > 0 else None
-            if item_el is None:
-                continue
-            for guid in item_el.findall("Guid"):
-                gid = guid.attrib.get("id", "")
-                if gid.startswith("tmdb://"):
-                    try:
-                        meta["tmdb_id"] = int(gid.split("tmdb://")[1].split("?")[0])
-                    except (ValueError, IndexError):
-                        pass
+            children = list(detail)
+            if children:
+                meta["tmdb_id"] = _extract_tmdb_id(children[0])
         except Exception:
             pass
 
