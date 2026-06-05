@@ -294,11 +294,25 @@ def _compute_format_metrics(shows: list, movies: list) -> list:
     result = []
     for fmt, g in sorted(groups.items(), key=lambda x: -x[1]["items"]):
         total = g["total_plays"]
+        def _quality_sort_key(qp: str) -> int:
+            """Extract resolution height for sorting highest→lowest."""
+            import re
+            s = qp.lower()
+            if "original" in s or "max" in s:
+                return 9999
+            for pat in (r"(\d+)k", r"(\d{3,4})p", r"(\d+)\s*mbps.*?(\d+)p"):
+                m = re.search(pat, s)
+                if m:
+                    val = int(m.group(m.lastindex))
+                    return val * (2160 if "4k" in s else 1)
+            m = re.search(r"(\d+)", s)
+            return int(m.group(1)) if m else 0
+
         transcode_total = sum(g["transcode_qualities"].values())
         quality_dist = []
         if transcode_total:
             for qp, cnt in sorted(g["transcode_qualities"].items(),
-                                   key=lambda x: -x[1]):
+                                   key=lambda x: -_quality_sort_key(x[0])):
                 quality_dist.append({
                     "quality": qp,
                     "pct": round(cnt / transcode_total * 100),

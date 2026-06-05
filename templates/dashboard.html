@@ -407,8 +407,8 @@
             <th style="text-align:right">Items</th>
             <th style="text-align:right">Plays</th>
             <th>Direct Play</th>
-            <th>Transcoded</th>
-            <th>Transcoded to (% of transcode sessions)</th>
+            <th>Copy (remux)</th>
+            <th>Transcode</th>
           </tr>
         </thead>
         <tbody>
@@ -437,20 +437,17 @@
               {% endif %}
             </td>
             <td>
-              {% if row.transcode_pct is not none %}
-                <span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span>
+              {% if row.copy_pct is not none %}
+                <span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span>
               {% else %}
                 <span style="color:var(--text-muted);font-size:.8rem">—</span>
               {% endif %}
             </td>
-            <td style="font-size:.8rem">
-              {% if row.quality_dist %}
-                {% for q in row.quality_dist %}
-                  <span style="color:var(--text-muted)">{{ q.quality }}</span>
-                  <span style="color:var(--text);font-weight:600;margin-right:10px">{{ q.pct }}%</span>
-                {% endfor %}
+            <td>
+              {% if row.transcode_pct is not none %}
+                <span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span>
               {% else %}
-                <span style="color:var(--text-muted)">—</span>
+                <span style="color:var(--text-muted);font-size:.8rem">—</span>
               {% endif %}
             </td>
           </tr>
