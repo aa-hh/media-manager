@@ -21,7 +21,7 @@
 {% endif %}
 
 {# ── Modal: Tautulli configured but no webhook data ── #}
-{% if tautulli_configured and not analytics and not format_metrics %}
+{% if tautulli_configured and not analytics and not format_metrics.rows %}
 <div id="modal-no-webhook" style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:36px 40px;max-width:560px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,.5)">
     <div style="width:56px;height:56px;border-radius:12px;background:rgba(99,102,241,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
@@ -103,7 +103,7 @@
 
 <div class="content">
 
-{% if not analytics and not format_metrics %}
+{% if not analytics and not format_metrics.rows %}
   <div class="section">
     <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
       <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 16px;display:block;opacity:.4"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
@@ -144,12 +144,13 @@
   {% endif %}
 
   {# ── Format Performance ── #}
-  {% if format_metrics %}
+  {% if format_metrics and format_metrics.rows %}
+  {% set qps = format_metrics.quality_profiles %}
   <div class="section">
     <div class="section-title">Format Performance</div>
     <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Direct play rate by source file format. Rows appear as new formats are played.</p>
     <div class="table-card" style="overflow:auto">
-      <table class="data-table" style="min-width:640px">
+      <table class="data-table" style="min-width:560px">
         <thead>
           <tr>
             <th>Format</th>
@@ -157,50 +158,43 @@
             <th style="min-width:130px">Direct Play</th>
             <th style="min-width:60px">Copy</th>
             <th style="min-width:60px">Transcode</th>
-            <th style="min-width:120px">Quality Profile</th>
-            <th style="min-width:60px;text-align:right">Count</th>
+            {% for qp in qps %}
+            <th style="text-align:right;min-width:80px">{{ qp }}</th>
+            {% endfor %}
           </tr>
         </thead>
         <tbody>
-          {% for row in format_metrics %}
-            {% set qrows = row.quality_dist if row.quality_dist else [none] %}
-            {% set span  = qrows | length %}
-            {% for q in qrows %}
-            <tr>
-              {% if loop.first %}
-              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px">
-                {% set parts = row.format.split(" ") %}
-                {% set codec = parts[0] if parts|length > 0 else "" %}
-                {% set res   = parts[1] if parts|length > 1 else "" %}
-                {% set hdr   = parts[2] if parts|length > 2 else "" %}
-                {% set fmt_tags = file_format_tags({"file_info": {"video_codec": codec, "resolution": res, "hdr": hdr != ""}, "quality_profile_name": row.format}) %}
-                {% for label, cls in fmt_tags %}
-                  <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
-                {% else %}
-                  <span style="font-size:.875rem">{{ row.format }}</span>
-                {% endfor %}
-                {% if hdr %}<span class="fmt-tag tag-hdr" style="margin-right:3px">{{ hdr }}</span>{% endif %}
-              </td>
-              <td rowspan="{{ span }}" style="text-align:right;color:var(--text-muted);vertical-align:top;padding-top:12px">{{ row.total_plays }}</td>
-              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px">
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
-                    <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
-                  </div>
-                  <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
-                </div>
-              </td>
-              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px"><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
-              <td rowspan="{{ span }}" style="vertical-align:top;padding-top:12px"><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
-              {% endif %}
-              {% if q %}
-              <td style="font-size:.82rem;color:var(--text-muted)">{{ q.quality }}</td>
-              <td style="text-align:right;font-size:.82rem;color:{{ 'var(--red)' if q.pct >= 50 else 'var(--yellow)' if q.pct >= 20 else 'var(--text-muted)' }}">{{ q.count }}</td>
+          {% for row in format_metrics.rows %}
+          <tr>
+            <td>
+              {% set parts = row.format.split(" ") %}
+              {% set codec = parts[0] if parts|length > 0 else "" %}
+              {% set res   = parts[1] if parts|length > 1 else "" %}
+              {% set hdr   = parts[2] if parts|length > 2 else "" %}
+              {% set fmt_tags = file_format_tags({"file_info": {"video_codec": codec, "resolution": res, "hdr": hdr != ""}, "quality_profile_name": row.format}) %}
+              {% for label, cls in fmt_tags %}
+                <span class="fmt-tag {{ cls }}" style="margin-right:3px">{{ label }}</span>
               {% else %}
-              <td colspan="2" style="font-size:.82rem;color:var(--text-muted)">—</td>
-              {% endif %}
-            </tr>
+                <span style="font-size:.875rem">{{ row.format }}</span>
+              {% endfor %}
+              {% if hdr %}<span class="fmt-tag tag-hdr" style="margin-right:3px">{{ hdr }}</span>{% endif %}
+            </td>
+            <td style="text-align:right;color:var(--text-muted)">{{ row.total_plays }}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:60px">
+                  <div style="width:{{ row.direct_pct }}%;height:100%;background:var(--green);border-radius:3px"></div>
+                </div>
+                <span style="font-size:.82rem;color:{{ 'var(--green)' if row.direct_pct >= 80 else ('var(--yellow)' if row.direct_pct >= 50 else 'var(--red)') }}">{{ row.direct_pct }}%</span>
+              </div>
+            </td>
+            <td><span style="font-size:.82rem;color:var(--text-muted)">{{ row.copy_pct }}%</span></td>
+            <td><span style="font-size:.82rem;color:{{ 'var(--red)' if row.transcode_pct >= 50 else ('var(--yellow)' if row.transcode_pct >= 20 else 'var(--text-muted)') }}">{{ row.transcode_pct }}%</span></td>
+            {% for qp in qps %}
+              {% set pct = row.quality_pcts.get(qp, 0) %}
+              <td style="text-align:right;font-size:.82rem;color:{% if qp == 'Original' %}{{ 'var(--green)' if pct >= 80 else ('var(--yellow)' if pct >= 50 else 'var(--red)') }}{% else %}{{ 'var(--red)' if pct >= 50 else ('var(--yellow)' if pct >= 20 else 'var(--text-muted)') }}{% endif %}">{{ pct }}%</td>
             {% endfor %}
+          </tr>
           {% endfor %}
         </tbody>
       </table>

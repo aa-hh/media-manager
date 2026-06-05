@@ -245,16 +245,18 @@ def _build_sparkline_points(snapshots):
     return " ".join(points)
 
 
-def _compute_format_metrics(db_path: Path) -> list:
+def _compute_format_metrics(db_path: Path) -> dict:
     """
-    Query webhook_plays.db and group by actual source file quality.
-    Each distinct (codec, resolution, hdr_type) seen in real plays becomes a row.
+    Query webhook_plays.db and group by source file format.
+    Returns {"rows": [...], "quality_profiles": [...ordered list of profile names...]}.
+    Each row has per-quality-profile percentage breakdowns; direct plays and
+    copies both count toward the "Original" bucket.
     """
     import sqlite3, re
     from collections import defaultdict
 
     if not db_path.exists():
-        return []
+        return {}
 
     try:
         con = sqlite3.connect(db_path)
@@ -270,22 +272,21 @@ def _compute_format_metrics(db_path: Path) -> list:
         """).fetchall()
         con.close()
     except Exception:
-        return []
+        return {}
 
     if not rows:
-        return []
+        return {}
 
     groups: dict = defaultdict(lambda: {
         "direct": 0, "transcode": 0, "copy": 0,
-        "transcode_qualities": {},
+        "quality_counts": defaultdict(int),
     })
 
     for codec, res, hdr, decision, qp in rows:
         codec = (codec or "").lower()
         res   = (res or "").lower()
-        hdr   = (hdr or "").strip()      # "HDR10", "DV", "HLG", or ""
+        hdr   = (hdr or "").strip()
 
-        # Normalise codec label
         if "hevc" in codec or "h265" in codec or "h.265" in codec:
             codec_label = "H.265"
         elif "h264" in codec or "avc" in codec or "h.264" in codec:
@@ -301,7 +302,6 @@ def _compute_format_metrics(db_path: Path) -> list:
         else:
             codec_label = codec.upper() if codec else "Unknown"
 
-        # Normalise resolution label
         if res in ("4k", "2160", "2160p"):
             res_label = "4K"
         elif res in ("1080", "1080p"):
@@ -324,12 +324,14 @@ def _compute_format_metrics(db_path: Path) -> list:
         d = (decision or "").lower()
         if d == "direct play":
             g["direct"] += 1
-        elif d == "transcode":
-            g["transcode"] += 1
-            if qp:
-                g["transcode_qualities"][qp] = g["transcode_qualities"].get(qp, 0) + 1
+            g["quality_counts"]["Original"] += 1
         elif d == "copy":
             g["copy"] += 1
+            g["quality_counts"]["Original"] += 1
+        elif d == "transcode":
+            g["transcode"] += 1
+            profile = (qp or "Original").strip()
+            g["quality_counts"][profile] += 1
 
     def _fmt_rank(fmt: str) -> tuple:
         s = fmt.lower()
@@ -348,16 +350,11 @@ def _compute_format_metrics(db_path: Path) -> list:
             res = int(m.group(1)) if m else 0
         hdr = 1 if any(x in s for x in ("hdr", "dv", "hlg", "dolby")) else 0
         codec = 0
-        if "av1" in s:
-            codec = 5
-        elif "h.265" in s or "hevc" in s:
-            codec = 4
-        elif "h.264" in s or "avc" in s:
-            codec = 3
-        elif "vp9" in s:
-            codec = 2
-        elif "mpeg" in s or "vc-1" in s:
-            codec = 1
+        if "av1" in s:      codec = 5
+        elif "h.265" in s:  codec = 4
+        elif "h.264" in s:  codec = 3
+        elif "vp9" in s:    codec = 2
+        elif "mpeg" in s or "vc-1" in s: codec = 1
         return (res, hdr, codec)
 
     def _quality_sort_key(qp: str) -> int:
@@ -372,31 +369,31 @@ def _compute_format_metrics(db_path: Path) -> list:
         m = re.search(r"(\d+)", s)
         return int(m.group(1)) if m else 0
 
-    result = []
+    # Collect all quality profiles seen across every format, sorted
+    all_profiles: set = set()
+    for g in groups.values():
+        all_profiles.update(g["quality_counts"].keys())
+    quality_profiles = sorted(all_profiles, key=lambda q: -_quality_sort_key(q))
+
+    result_rows = []
     for fmt, g in sorted(groups.items(), key=lambda x: _fmt_rank(x[0]), reverse=True):
         total = g["direct"] + g["transcode"] + g["copy"]
         if total == 0:
             continue
-        transcode_total = sum(g["transcode_qualities"].values())
-        quality_dist = []
-        if transcode_total:
-            for qp, cnt in sorted(g["transcode_qualities"].items(),
-                                   key=lambda x: -_quality_sort_key(x[0])):
-                quality_dist.append({
-                    "quality": qp,
-                    "count":   cnt,
-                    "pct":     round(cnt / total * 100),
-                    "pct_of_transcode": round(cnt / transcode_total * 100),
-                })
-        result.append({
+        quality_pcts = {
+            qp: round(cnt / total * 100)
+            for qp, cnt in g["quality_counts"].items()
+        }
+        result_rows.append({
             "format":        fmt,
             "total_plays":   total,
             "direct_pct":    round(g["direct"]    / total * 100),
             "transcode_pct": round(g["transcode"] / total * 100),
             "copy_pct":      round(g["copy"]      / total * 100),
-            "quality_dist":  quality_dist,
+            "quality_pcts":  quality_pcts,
         })
-    return result
+
+    return {"rows": result_rows, "quality_profiles": quality_profiles}
 
 
 def _compute_playback_analytics(db_path: Path) -> dict | None:
