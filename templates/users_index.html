@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set active = "users" %}
+{% set root = "../" %}
+{% set assets_root = "../" %}
+
+{% block title %}Users — Media Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Users</h1>
+  <p>{{ users | length }} tracked users</p>
+</div>
+<div class="content">
+  {% if users %}
+  <div class="stat-grid">
+    {% for user in users | sort(attribute='storage_requested_gb', reverse=True) %}
+    <a href="../users/{{ user.name | lower | replace(' ', '-') }}/index.html" style="text-decoration:none">
+      <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:white;flex-shrink:0">
+            {{ user.name[0] | upper }}
+          </div>
+          <div>
+            <div style="font-weight:600">{{ user.name }}</div>
+            <div style="font-size:.78rem;color:var(--text-muted)">{{ user.requests_made }} requests</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.8rem">
+          <div>
+            <div style="color:var(--text-muted)">Requested</div>
+            <div style="font-weight:600">{{ "%.0f" | format(user.storage_requested_gb) }} GB</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted)">Plays</div>
+            <div style="font-weight:600">{{ user.total_plays }}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted)">Unwatched</div>
+            <div style="font-weight:600;{{ 'color:var(--red)' if user.unwatched_request_ids | length > 0 else '' }}">{{ user.unwatched_request_ids | length }}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted)">Watch Rate</div>
+            <div style="font-weight:600">
+              {% if user.requests_made > 0 %}
+                {{ "%.0f" | format((user.requests_made - (user.unwatched_request_ids | length)) / user.requests_made * 100) }}%
+              {% else %}—{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+    <p style="color:var(--text-muted)">No user data available. Ensure Overseerr and Tautulli are configured.</p>
+  {% endif %}
+</div>
+{% endblock %}

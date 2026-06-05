@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% set active = "movies" %}
+{% set root = "../" %}
+{% set assets_root = "../" %}
+
+{% block title %}Movies — Media Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Movies</h1>
+  <p>{{ movies | length }} movies · {{ "%.1f" | format(movies | sum(attribute='size_gb')) }} GB</p>
+</div>
+<div class="content">
+  <div class="filter-bar">
+    <input type="search" id="search" placeholder="Search movies…">
+    <select id="sortBy">
+      <option value="size">Sort: Largest</option>
+      <option value="title">Sort: Title</option>
+      <option value="rating">Sort: Rating</option>
+      <option value="year">Sort: Newest</option>
+      <option value="delete">Sort: Delete Score</option>
+    </select>
+    <select id="filterGenre">
+      <option value="">All Genres</option>
+      {% for genre in top_genres(movies) %}
+      <option value="{{ genre }}">{{ genre }}</option>
+      {% endfor %}
+    </select>
+    <select id="filterStatus">
+      <option value="">All</option>
+      <option value="unwatched">Unwatched Requests</option>
+      <option value="delete">Delete Candidates</option>
+    </select>
+  </div>
+
+  <div class="poster-wall" id="posterWall">
+    {% for movie in movies %}
+    <div class="media-card"
+         data-title="{{ movie.title | lower }}"
+         data-size="{{ movie.size_bytes }}"
+         data-rating="{{ movie.rating or 0 }}"
+         data-year="{{ movie.year or 0 }}"
+         data-genres="{{ movie.genres | join(',') | lower }}"
+         data-unwatched="{{ '1' if (movie.request.requested and not movie.any_watched) else '0' }}"
+         data-delete="{{ movie.deletion.recommendation }}"
+         data-delete-score="{{ movie.deletion.score }}"
+         >
+      <a href="../movies/{{ movie.slug }}/index.html">
+        <div class="poster-wrap">
+          {% if movie.poster %}
+            <img src="{{ movie.poster }}" alt="{{ movie.title }}" loading="lazy">
+          {% else %}
+            <div class="placeholder-poster">No Poster</div>
+          {% endif %}
+          {% if movie.rating %}
+            <div class="rating-badge">★ {{ "%.1f" | format(movie.rating) }}</div>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <div class="card-title">{{ movie.title }}</div>
+          <div class="card-meta">{{ movie.year or "" }} · {{ movie.size_gb | gb }}</div>
+        </div>
+        <div class="card-footer">
+          {% set rsl = requester_status_label(movie) %}
+          {% if rsl %}
+            <span class="badge {{ rsl[0] }}">{{ rsl[1] }}</span>
+          {% else %}
+            <span class="badge library">Library</span>
+          {% endif %}
+          {% if movie.total_plays > 0 %}
+            <span style="font-size:.75rem;color:var(--text-muted)">{{ movie.total_plays }} plays</span>
+          {% endif %}
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const wall = document.getElementById('posterWall');
+const cards = Array.from(wall.children);
+
+function filter() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const sort = document.getElementById('sortBy').value;
+  const genre = document.getElementById('filterGenre').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value;
+
+  let visible = cards.filter(c => {
+    if (q && !c.dataset.title.includes(q)) return false;
+    if (genre && !c.dataset.genres.includes(genre)) return false;
+    if (status === 'unwatched' && c.dataset.unwatched !== '1') return false;
+    if (status === 'delete' && !['strong_delete','suggest_delete'].includes(c.dataset.delete)) return false;
+    return true;
+  });
+
+  visible.sort((a, b) => {
+    if (sort === 'size')   return Number(b.dataset.size)        - Number(a.dataset.size);
+    if (sort === 'rating') return Number(b.dataset.rating)      - Number(a.dataset.rating);
+    if (sort === 'year')   return Number(b.dataset.year)        - Number(a.dataset.year);
+    if (sort === 'delete') return Number(b.dataset.deleteScore) - Number(a.dataset.deleteScore);
+    return a.dataset.title.localeCompare(b.dataset.title);
+  });
+
+  cards.forEach(c => c.style.display = 'none');
+  visible.forEach(c => { c.style.display = ''; wall.appendChild(c); });
+}
+
+['search','sortBy','filterGenre','filterStatus'].forEach(id =>
+  document.getElementById(id).addEventListener('input', filter)
+);
+</script>
+{% endblock %}

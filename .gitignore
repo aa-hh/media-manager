@@ -1,0 +1,18 @@
+# Config (contains credentials — use config/.env.example as the template)
+config/.env
+
+# Generated output
+public/
+data/
+cache/
+logs/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# OS
+.DS_Store

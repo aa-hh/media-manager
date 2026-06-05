@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set active = "tv" %}
+{% set root = "../../" %}
+{% set assets_root = "../../" %}
+
+{% block title %}{{ item.title }} — Media Manager{% endblock %}
+
+{% block content %}
+
+{# ── Hero ── #}
+<div class="detail-hero">
+  {% if item.backdrop %}
+    <div class="backdrop" style="background-image: url('{{ item.backdrop }}')"></div>
+  {% else %}
+    <div class="backdrop" style="background: linear-gradient(135deg, #1e2435, #252d3f)"></div>
+  {% endif %}
+  <div class="hero-content">
+    {% if item.poster %}
+      <img class="poster" src="{{ item.poster }}" alt="{{ item.title }}">
+    {% endif %}
+    <div class="hero-text">
+      <h1>{{ item.title }}</h1>
+      <div class="meta-row">
+        {% if item.year %}<span>{{ item.year }}</span>{% endif %}
+        {% if item.network %}<span>{{ item.network }}</span>{% endif %}
+        {% if item.rating %}<span style="color:#f59e0b">★ {{ "%.1f" | format(item.rating) }}</span>{% endif %}
+        <span>{{ item.size_gb | gb }}</span>
+        <span>{{ item.episode_count }} episodes</span>
+        {% set delbadge = deletion_badge(item) %}
+        <span class="badge {{ delbadge[0] }}">{{ delbadge[1] }}</span>
+      </div>
+      <div class="genre-tags">
+        {% for g in item.genres %}
+          <span class="genre-tag">{{ g }}</span>
+        {% endfor %}
+      </div>
+
+      {# Requester status #}
+      <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        {% if item.request.requested %}
+          <span style="font-size:.85rem;color:rgba(255,255,255,.6)">Requested by</span>
+          <strong style="font-size:.9rem">{{ item.request.requester_name }}</strong>
+          <span style="color:rgba(255,255,255,.4);font-size:.8rem">{{ item.request.requested_at | fmt_date }}</span>
+          {% set rsl = requester_status_label(item) %}
+          {% if rsl %}<span class="badge {{ rsl[0] }}">{{ rsl[1] }}</span>{% endif %}
+        {% else %}
+          <span class="badge library">Library Content</span>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="detail-grid">
+    <div>
+
+      {# ── Overview ── #}
+      {% if item.overview %}
+        <p class="overview-text">{{ item.overview }}</p>
+      {% endif %}
+
+      {# ── Storage by Season ── #}
+      {% if item.seasons %}
+      <div class="table-card" style="margin-bottom:24px">
+        <div class="table-card-title">Storage by Season</div>
+        <div style="padding:16px 20px">
+          {% set max_size = item.seasons | map(attribute='size_bytes') | max %}
+          {% for season in item.seasons | sort(attribute='season_number') %}
+          {% if season.size_bytes > 0 %}
+          {% set sdel = season.get('deletion', {}) if season.get('deletion') else {} %}
+          <div class="season-row">
+            <div class="season-label">S{{ "%02d" | format(season.season_number) }}</div>
+            <div class="season-bar-wrap">
+              <div class="season-bar" style="width: {{ (season.size_bytes / max_size * 100) | round(1) }}%"></div>
+              <span class="season-bar-label">{{ season.episode_count }} ep</span>
+            </div>
+            <div class="season-size">{{ season.size_gb | gb }}</div>
+            {% if sdel %}
+              {% set sb = deletion_badge({'deletion': sdel}) %}
+              <span class="badge {{ sb[0] }}" style="font-size:.65rem;padding:1px 6px" title="{{ sdel.get('reasons', []) | join(', ') }}">{{ sb[1] }}</span>
+            {% endif %}
+            {% if season.total_plays > 0 %}
+              <span style="font-size:.75rem;color:var(--text-muted);min-width:60px;text-align:right">{{ season.total_plays }} plays</span>
+            {% else %}
+              <span style="font-size:.75rem;color:var(--red);min-width:60px;text-align:right">unwatched</span>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Household Activity ── #}
+      {% if item.watch_data %}
+      <div class="table-card">
+        <div class="table-card-title">Household Activity</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Plays</th>
+              <th>Completion</th>
+              <th>Last Watched</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user, wd in item.watch_data.items() %}
+            <tr>
+              <td>{{ user }}</td>
+              <td>{{ wd.plays }}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:80px">
+                    <div style="width:{{ [wd.completion_pct or 0, 100] | min }}%;height:100%;background:var(--accent);border-radius:3px"></div>
+                  </div>
+                  <span style="font-size:.8rem;color:var(--text-muted)">{{ wd.completion_pct | pct }}</span>
+                </div>
+              </td>
+              <td style="color:var(--text-muted)">{{ wd.last_watched | fmt_date }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="table-card">
+          <div class="table-card-title">Household Activity</div>
+          <p style="padding:16px 20px;color:var(--text-muted);font-size:.88rem">No watch history available.</p>
+        </div>
+      {% endif %}
+
+    </div>
+
+    {# ── Sidebar ── #}
+    <div>
+      {# Service Links #}
+      <div class="table-card" style="margin-bottom:20px">
+        <div class="table-card-title">Open In</div>
+        <div class="service-btns">
+          {# 1. Plex #}
+          {% if plex_base and item.plex_key %}
+            <a class="service-btn plex" href="{{ plex_base }}/details?key=/library/metadata/{{ item.plex_key }}" target="_blank" rel="noopener">
+          {% else %}
+            <a class="service-btn plex" href="https://app.plex.tv/desktop/#!/search?query={{ item.title | replace(' ', '+') }}" target="_blank" rel="noopener">
+          {% endif %}
+            <img class="service-btn-icon" src="{{ assets_root }}assets/icons/plex.svg" alt="">
+            <span class="service-btn-label">Plex</span><span class="service-btn-arrow">↗</span>
+          </a>
+          {# 2. Sonarr #}
+          {% if service_urls.sonarr and item.sonarr_slug %}
+            <a class="service-btn sonarr" href="{{ service_urls.sonarr }}/series/{{ item.sonarr_slug }}" target="_blank" rel="noopener">
+          {% elif service_urls.sonarr and item.sonarr_id %}
+            <a class="service-btn sonarr" href="{{ service_urls.sonarr }}/series/{{ item.sonarr_id }}" target="_blank" rel="noopener">
+          {% else %}
+            <a class="service-btn sonarr" href="#" style="pointer-events:none;opacity:.4">
+          {% endif %}
+            <img class="service-btn-icon" src="{{ assets_root }}assets/icons/sonarr.svg" alt="">
+            <span class="service-btn-label">Sonarr</span><span class="service-btn-arrow">↗</span>
+          </a>
+          {# 3. Seerr #}
+          {% if service_urls.seerr and item.tmdb_id %}
+            <a class="service-btn seerr" href="{{ service_urls.seerr }}/tv/{{ item.tmdb_id }}" target="_blank" rel="noopener">
+          {% else %}
+            <a class="service-btn seerr" href="#" style="pointer-events:none;opacity:.4">
+          {% endif %}
+            <img class="service-btn-icon" src="{{ assets_root }}assets/icons/seerr.svg" alt="">
+            <span class="service-btn-label">Overseerr</span><span class="service-btn-arrow">↗</span>
+          </a>
+          {# 4. TMDB #}
+          {% if item.tmdb_id %}
+            <a class="service-btn tmdb" href="https://www.themoviedb.org/tv/{{ item.tmdb_id }}" target="_blank" rel="noopener">
+          {% else %}
+            <a class="service-btn tmdb" href="#" style="pointer-events:none;opacity:.4">
+          {% endif %}
+            <img class="service-btn-icon" src="{{ assets_root }}assets/icons/tmdb.svg" alt="">
+            <span class="service-btn-label">TMDB</span><span class="service-btn-arrow">↗</span>
+          </a>
+        </div>
+      </div>
+
+      {# Deletion Recommendation #}
+      <div class="table-card" style="margin-bottom:20px">
+        <div class="table-card-title">Deletion Analysis</div>
+        <div style="padding:16px 20px">
+          {% set delbadge = deletion_badge(item) %}
+          <div style="margin-bottom:12px">
+            <span class="badge {{ delbadge[0] }}" style="font-size:.85rem;padding:4px 12px">{{ delbadge[1] }}</span>
+            <span style="font-size:.8rem;color:var(--text-muted);margin-left:8px">Score: {{ item.deletion.score }}/100</span>
+          </div>
+          {% if item.deletion.reasons %}
+          <ul class="deletion-reasons">
+            {% for r in item.deletion.reasons %}
+              <li>{{ r }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Quick Stats #}
+      <div class="table-card">
+        <div class="table-card-title">Details</div>
+        <table class="data-table">
+          <tbody>
+            <tr><td style="color:var(--text-muted)">Size</td><td>{{ item.size_gb | gb }}</td></tr>
+            <tr><td style="color:var(--text-muted)">Episodes</td><td>{{ item.episode_count }} / {{ item.total_episodes }}</td></tr>
+            <tr><td style="color:var(--text-muted)">Seasons</td><td>{{ item.seasons | selectattr('size_bytes', 'gt', 0) | list | length }}</td></tr>
+            <tr><td style="color:var(--text-muted)">Status</td><td>{{ item.status | capitalize }}</td></tr>
+            {% if item.year %}<tr><td style="color:var(--text-muted)">Year</td><td>{{ item.year }}</td></tr>{% endif %}
+            {% if item.rating %}<tr><td style="color:var(--text-muted)">Rating</td><td>★ {{ "%.1f" | format(item.rating) }}</td></tr>{% endif %}
+            <tr><td style="color:var(--text-muted)">Total Plays</td><td>{{ item.total_plays }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

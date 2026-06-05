@@ -1,0 +1,17 @@
+services:
+  app:
+    build: ./auth_proxy
+    container_name: media-manager
+    ports:
+      - "10400:8000"
+    env_file:
+      - /home/ahhhhhhh/homepage/config/homepage.env
+    environment:
+      - PUBLIC_DIR=/app/public
+      - CONFIG_DIR=/app/config
+      - DATA_DIR=/app/data
+    volumes:
+      - ./public:/app/public:ro
+      - ./config:/app/config
+      - ./data:/app/data:ro
+    restart: unless-stopped

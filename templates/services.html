@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% set root = "../" %}
+{% set assets_root = "../" %}
+{% block title %}Services — Media Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Linked Services</h1>
+  {% if services.checked_at %}
+  <p class="page-subtitle">Last checked: {{ services.checked_at[:19].replace("T", " ") }} UTC</p>
+  {% endif %}
+</div>
+
+{% set svc_list = services.services if services.services is defined else [] %}
+{% set updates_available = svc_list | selectattr("update_available") | list | length %}
+
+{% if updates_available > 0 %}
+<div class="alert alert--warning">
+  {{ updates_available }} service{{ 's' if updates_available != 1 else '' }} have updates available.
+</div>
+{% endif %}
+
+<div class="services-grid">
+{% for svc in svc_list %}
+<div class="service-card {% if not svc.reachable %}service-card--down{% elif svc.update_available %}service-card--update{% else %}service-card--ok{% endif %}">
+  <div class="service-card__header">
+    <div class="service-card__name">
+      <span class="status-dot {% if not svc.reachable %}status-dot--down{% elif svc.update_available %}status-dot--warn{% else %}status-dot--ok{% endif %}"></span>
+      {{ svc.name }}
+    </div>
+    <a href="{{ svc.url }}" target="_blank" class="service-card__link" title="Open {{ svc.name }}">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/>
+        <line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+    </a>
+  </div>
+
+  {% if not svc.reachable %}
+  <div class="service-card__status service-card__status--down">Unreachable</div>
+  {% else %}
+  <div class="service-card__versions">
+    <div class="version-row">
+      <span class="version-label">Current</span>
+      <code class="version-val">{{ svc.current_version or '—' }}</code>
+    </div>
+    {% if svc.latest_version and svc.latest_version != svc.current_version %}
+    <div class="version-row">
+      <span class="version-label">Latest</span>
+      <code class="version-val version-val--new">{{ svc.latest_version }}</code>
+    </div>
+    {% elif svc.latest_version %}
+    <div class="version-row">
+      <span class="version-label">Latest</span>
+      <code class="version-val version-val--current">{{ svc.latest_version }} ✓</code>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if svc.update_available %}
+  <div class="service-card__update">
+    {% if svc.installable %}
+    <div class="update-badge update-badge--installable">Update available via built-in updater</div>
+    <div class="update-cmd">
+      <span class="update-cmd__label">Trigger via script:</span>
+      <code>bin/trigger-update.sh {{ svc.name | lower }}</code>
+    </div>
+    {% elif svc.update_method == 'script' %}
+    <div class="update-badge update-badge--script">Update available — run update script</div>
+    {% if svc.update_notes %}
+    <div class="update-notes">
+      {% for line in svc.update_notes.split('\n') %}
+      {% if line.startswith('Run:') or line.startswith('Dry-run') %}<code class="update-notes__cmd">{{ line }}</code>{% else %}<span>{{ line }}</span>{% endif %}<br>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="update-badge update-badge--manual">Update available — manual</div>
+    {% if svc.update_notes %}
+    <p class="update-notes">{{ svc.update_notes }}</p>
+    {% endif %}
+    {% endif %}
+
+    {% if svc.changes %}
+    {% set fixes = svc.changes.get('fixed', []) %}
+    {% set news = svc.changes.get('new', []) %}
+    {% if fixes or news %}
+    <details class="changelog">
+      <summary>What's changed</summary>
+      {% if news %}
+      <ul class="changelog__list">{% for n in news %}<li class="changelog__new">{{ n }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if fixes %}
+      <ul class="changelog__list">{% for f in fixes[:8] %}<li class="changelog__fix">{{ f }}</li>{% endfor %}</ul>
+      {% endif %}
+    </details>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="service-card__ok">Up to date</div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+{% if not svc_list %}
+<div class="empty-state">No service data — run <code>python run.py collect</code> to check services.</div>
+{% endif %}
+{% endblock %}

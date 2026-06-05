@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 260" width="440" height="260">
+  <defs>
+
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#a070e0" flood-opacity="0.22"/>
+    </filter>
+
+    <!-- ══════════════════════════════════════════════════════
+         LAYOUT — matching proper cap-height proportions
+         Cap height: y 50 → 210  (160 px)
+
+         M  left stem  x=85   right stem x=230   width=145 px
+            valley at (158, 143)
+
+         O  cx=278  rx=75  ry=80   height=160 px  width=150 px
+            left (203,130)  right (353,130)
+            overlap with M right stem = 27 px
+            O crosses x=230 at y ≈ 69 and y ≈ 191
+         ══════════════════════════════════════════════════════ -->
+
+    <!-- M gradients -->
+    <linearGradient id="gM1" x1="85" y1="50" x2="85" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#F5CB35"/>
+      <stop offset="100%" stop-color="#E07218"/>
+    </linearGradient>
+    <linearGradient id="gM2" x1="85" y1="50" x2="158" y2="143" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#E07218"/>
+      <stop offset="100%" stop-color="#35C5F4"/>
+    </linearGradient>
+    <linearGradient id="gM3" x1="158" y1="143" x2="230" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#35C5F4"/>
+      <stop offset="100%" stop-color="#FC5C7D"/>
+    </linearGradient>
+    <linearGradient id="gM4" x1="230" y1="50" x2="230" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#FC5C7D"/>
+      <stop offset="100%" stop-color="#7C5CF6"/>
+    </linearGradient>
+
+    <!-- O gradients -->
+    <linearGradient id="gOTop" x1="203" y1="130" x2="353" y2="130" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#F5CB35"/>
+      <stop offset="44%"  stop-color="#35C5F4"/>
+      <stop offset="100%" stop-color="#FC5C7D"/>
+    </linearGradient>
+    <linearGradient id="gOBot" x1="353" y1="130" x2="203" y2="130" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#FC5C7D"/>
+      <stop offset="50%"  stop-color="#7C5CF6"/>
+      <stop offset="100%" stop-color="#F5CB35"/>
+    </linearGradient>
+
+  </defs>
+
+  <!-- Background -->
+  <rect width="440" height="260" fill="#ffffff" rx="20"/>
+
+  <!-- Glow pass -->
+  <g filter="url(#glow)" opacity="0.36">
+    <line x1="85"  y1="210" x2="85"  y2="50"  stroke="url(#gM1)" stroke-width="40" stroke-linecap="round"/>
+    <line x1="85"  y1="50"  x2="158" y2="143" stroke="url(#gM2)" stroke-width="40" stroke-linecap="round"/>
+    <line x1="158" y1="143" x2="230" y2="50"  stroke="url(#gM3)" stroke-width="40" stroke-linecap="round"/>
+    <line x1="230" y1="50"  x2="230" y2="210" stroke="url(#gM4)" stroke-width="40" stroke-linecap="round"/>
+    <path d="M 203,130 A 75,80 0 0 1 353,130" stroke="url(#gOTop)" stroke-width="40" fill="none" stroke-linecap="round"/>
+    <path d="M 353,130 A 75,80 0 0 1 203,130" stroke="url(#gOBot)" stroke-width="40" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Shadow pass -->
+  <g filter="url(#shadow)">
+
+    <!-- Weave: M right stem BEHIND O (y 69 → 191) — drawn first -->
+    <line x1="230" y1="69"  x2="230" y2="191" stroke="url(#gM4)" stroke-width="30" stroke-linecap="round"/>
+
+    <!-- O ribbons — over M mid-stem -->
+    <path d="M 203,130 A 75,80 0 0 1 353,130"
+          stroke="url(#gOTop)" stroke-width="30" fill="none" stroke-linecap="round" opacity="0.91"/>
+    <path d="M 353,130 A 75,80 0 0 1 203,130"
+          stroke="url(#gOBot)" stroke-width="30" fill="none" stroke-linecap="round" opacity="0.91"/>
+
+    <!-- M left stem, diagonals, right-stem top & bottom stubs — all in front of O -->
+    <line x1="85"  y1="210" x2="85"  y2="50"  stroke="url(#gM1)" stroke-width="30" stroke-linecap="round"/>
+    <line x1="85"  y1="50"  x2="158" y2="143" stroke="url(#gM2)" stroke-width="30" stroke-linecap="round" opacity="0.92"/>
+    <line x1="158" y1="143" x2="230" y2="50"  stroke="url(#gM3)" stroke-width="30" stroke-linecap="round" opacity="0.92"/>
+    <!-- right stem top stub -->
+    <line x1="230" y1="50"  x2="230" y2="72"  stroke="url(#gM4)" stroke-width="30" stroke-linecap="round"/>
+    <!-- right stem bottom stub -->
+    <line x1="230" y1="188" x2="230" y2="210" stroke="url(#gM4)" stroke-width="30" stroke-linecap="round"/>
+
+  </g>
+
+  <!-- Highlight sheens -->
+  <g opacity="0.28">
+    <line x1="78"  y1="206" x2="78"  y2="54"  stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+    <line x1="79"  y1="48"  x2="152" y2="141" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <line x1="152" y1="141" x2="223" y2="48"  stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <line x1="223" y1="54"  x2="223" y2="206" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 197,130 A 71,76 0 0 1 347,130" stroke="#ffffff" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M 347,130 A 71,76 0 0 1 197,130" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Weave crossing halos -->
+  <ellipse cx="230" cy="69"  rx="16" ry="11" fill="#FC5C7D" opacity="0.13"/>
+  <ellipse cx="230" cy="191" rx="16" ry="11" fill="#7C5CF6" opacity="0.13"/>
+
+</svg>
