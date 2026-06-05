@@ -1,387 +1,208 @@
 # Media Manager
 
-A visual media intelligence dashboard for Whatbox that combines Sonarr, Radarr, TMDB metadata, and storage analytics into a poster-driven experience.
+A self-hosted media intelligence dashboard for seedboxes and home servers. Connects to your existing Sonarr, Radarr, Plex, Tautulli, and Overseerr stack and turns them into a single visual interface for understanding your library, your storage, and how your users are actually watching.
 
 ---
 
-# Project Goals
+## What it does
 
-Media Manager answers a simple question:
+### Library browser
+Poster-driven browsing of your full TV and movie library. Each title shows storage size, TMDB rating, genres, watch status per user, and deletion score. Backed by Sonarr and Radarr, enriched with TMDB metadata.
 
-> Why is my storage full?
+### Per-user watch history
+See exactly who has watched what, when they last watched it, how far through a series they are, and how many episodes or plays they have. Sourced from Plex and/or Tautulli — if both are connected, the richer data source wins per user per title.
 
-Traditional disk usage tools only show folders and files.
+### User profiles
+Each user gets a profile page showing their total watch count, storage they've requested, storage they've actually watched, and their full request and watch history.
 
-Media Manager presents storage usage through the lens of your media library:
+### Request tracking
+Pulls all requests and watchlists from Overseerr/Seerr. Shows who requested each title, whether they've watched it, and flags content that was requested but never touched.
 
-- Movies
-- TV Shows
-- Collections
-- Genres
-- Ratings
-- Quality Profiles
-- Watch History (future)
+### Deletion scoring
+Every title gets a 0–100 deletion score based on: storage size, last watch date, play count, number of watchers, TMDB rating, and whether it was ever watched at all. Surfaces the clearest candidates for removal.
 
-The result is a visual dashboard that helps identify:
+### Storage forecasting
+Tracks library size over time and projects how long until you run out of space based on recent growth rate.
 
-- Largest storage consumers
-- Low-value content
-- Duplicate quality upgrades
-- Unwatched content
-- Space recovery opportunities
+### Service status
+Health dashboard for all connected services — current version, latest available version, and whether updates are available.
 
 ---
 
-# Architecture
+## Services
 
-text Sonarr    \     \      ---> media_check.py ---> index.html ---> Nginx ---> Browser     /    / Radarr  TMDB   |   +--> Poster Enrichment 
+| Service | What it enables | Required? |
+|---------|----------------|-----------|
+| **Sonarr** | TV library, episode details, TV storage stats | One of Sonarr/Radarr |
+| **Radarr** | Movie library, movie storage stats | One of Sonarr/Radarr |
+| **TMDB** | Posters, ratings, overviews for all media | Strongly recommended |
+| **Plex** | Watch history, per-user data, user profiles | Optional |
+| **Tautulli** | Enhanced watch stats (more accurate than Plex alone) | Optional |
+| **Overseerr / Seerr** | Request tracking, watchlists | Optional |
 
-Important:
+Minimum viable setup: **Sonarr or Radarr + TMDB**.
 
-The Python script does all processing.
-
-The web server only serves the generated HTML.
-
-This keeps the application fast and lightweight.
-
----
-
-# Directory Structure
-
-text ~/media-manager/  ├── cache/ │   ├── ignore_list.json │   └── poster_cache.json │ ├── logs/ │   └── media_check.log │ ├── public/ │   └── index.html │ ├── scripts/ │   └── media_check.py │ ├── docker-compose.yml ├── update_dashboard.sh └── README.md 
+Multiple Sonarr and Radarr instances are supported — useful if you split TV and anime, or movies across multiple root folders with separate instances.
 
 ---
 
-# Requirements
+## Installation
 
-## Applications
+### 1. Clone the repo
 
-Required:
+```bash
+git clone https://github.com/aa-hh/media-manager
+cd media-manager
+```
 
-- Sonarr
-- Radarr
-- Podman
-- Podman Compose
-- Python 3
+### 2. Run the install script
 
-Optional:
+```bash
+chmod +x install.sh
+./install.sh
+```
 
-- Plex
-- Tautulli
+This will:
+- Check Python 3.9+ is available
+- Create a `.venv` virtual environment and install dependencies
+- Ask for a port number (default: 10400)
+- Generate a secret key and Plex client ID
+- Write an initial `config/.env`
 
----
+### 3. Start the container
 
-# Environment Variables
+```bash
+./bin/deploy.sh
+```
 
-Media Manager loads credentials from:
+Requires Docker or Podman with Compose.
 
-text ~/homepage/config/homepage.env 
+### 4. Complete setup in your browser
 
-Example:
+Visit `http://your-server:10400` — you'll be redirected to the setup wizard automatically.
 
-env SONARR_URL=https://sonarr.box.example.com RADARR_URL=https://radarr.box.example.com  HOMEPAGE_VAR_SONARR_API_KEY=xxxxxxxx HOMEPAGE_VAR_RADARR_API_KEY=xxxxxxxx  TMDB_API_KEY=xxxxxxxx 
-
----
-
-# Python Environment
-
-Create a dedicated virtual environment.
-
-bash /usr/bin/virtualenv -p python3 --system-site-packages ~/mediaenv 
-
-Activate:
-
-bash source ~/mediaenv/bin/activate 
-
-Install dependencies:
-
-bash pip install requests 
-
-Verify:
-
-bash python --version pip list 
-
-Deactivate:
-
-bash deactivate 
+The wizard walks you through:
+1. **Sign in with Plex** — authenticates you and lists your Plex servers to pick from
+2. **Service matrix** — toggle which services you want to connect and see what each one enables
+3. **Credentials** — enter URLs and API keys with live connection tests for each
+4. **Plex library assignment** — pick which Plex library sections are TV and which are Movies
+5. **Storage capacity** — optional, used for forecasting charts
+6. **Save** — writes your config and redirects to the dashboard
 
 ---
 
-# Dashboard Generator
+## Keeping data fresh
 
-Main script:
+The collection pipeline is a Python script that pulls data from all connected services and generates the dashboard HTML. Run it manually or schedule it:
 
-text ~/media-manager/scripts/media_check.py 
+```bash
+# Full run (collect + generate)
+./update_dashboard.sh
 
-Purpose:
+# Or separately
+.venv/bin/python scripts/run.py collect
+.venv/bin/python scripts/run.py generate
+```
 
-- Pull Sonarr data
-- Pull Radarr data
-- Fetch TMDB posters
-- Build storage statistics
-- Generate dashboard HTML
-- Update caches
-- Write logs
+**Recommended cron schedule** — add to `crontab -e`:
 
----
+```cron
+# Refresh dashboard every day at 4am
+0 4 * * * /path/to/media-manager/update_dashboard.sh >> /path/to/media-manager/logs/cron.log 2>&1
 
-# Wrapper Script
-
-File:
-
-text ~/media-manager/update_dashboard.sh 
-
-Contents:
-
-bash #!/bin/sh  . "$HOME/mediaenv/bin/activate"  export $(grep -v '^#' "$HOME/homepage/config/homepage.env" | xargs)  python "$HOME/media-manager/scripts/media_check.py" 
-
-Make executable:
-
-bash chmod +x ~/media-manager/update_dashboard.sh 
+# Keep container running (restart if it dies)
+@reboot /path/to/media-manager/bin/media-manager-ensure-running.sh >> /path/to/media-manager/logs/ensure.log 2>&1
+*/5 * * * * /path/to/media-manager/bin/media-manager-ensure-running.sh >> /path/to/media-manager/logs/ensure.log 2>&1
+```
 
 ---
 
-# Manual Dashboard Generation
+## Configuration
 
-Run:
+All configuration lives in `config/.env`. The setup wizard writes this file — you can also edit it directly.
 
-bash ~/media-manager/update_dashboard.sh 
+See [`config/.env.example`](config/.env.example) for all supported variables with documentation.
 
-Expected output:
+Key variables:
 
-text [2026-06-05 04:22:01] === Media check started === [2026-06-05 04:22:03] Fetched 214 series from Sonarr [2026-06-05 04:22:06] Fetched 1387 movies from Radarr [2026-06-05 04:22:08] Dashboard generated [2026-06-05 04:22:08] Dashboard generation completed in 7.3 seconds 
+```env
+PORT=10400                    # host port the app listens on
+AUTH_SECRET_KEY=...           # generated by install.sh
+PLEX_CLIENT_ID=...            # generated by install.sh
 
----
+SONARR_URL=https://sonarr.example.com
+SONARR_API_KEY=...
+RADARR_URL=https://radarr.example.com
+RADARR_API_KEY=...
+TMDB_API_KEY=...
 
-# Logging
+PLEX_URL=https://plex.example.com:32400
+PLEX_TOKEN=...
+PLEX_TV_SECTIONS=1            # comma-separated if multiple
+PLEX_MOVIE_SECTIONS=2
 
-Logs are stored at:
+TAUTULLI_URL=http://localhost:8181
+TAUTULLI_API_KEY=...
 
-text ~/media-manager/logs/media_check.log 
+SEERR_URL=https://overseerr.example.com
+SEERR_API_KEY=...
 
-View:
+STORAGE_CAPACITY_GB=4096      # for forecasting charts
+SETUP_COMPLETE=true
+```
 
-bash cat ~/media-manager/logs/media_check.log 
-
-Recent entries:
-
-bash tail -50 ~/media-manager/logs/media_check.log 
-
-Live monitoring:
-
-bash tail -f ~/media-manager/logs/media_check.log 
-
----
-
-# Poster Cache
-
-File:
-
-text cache/poster_cache.json 
-
-Purpose:
-
-- Reduce TMDB requests
-- Faster generation
-- Prevent API rate limits
+Multiple Sonarr/Radarr instances use comma-separated values:
+```env
+SONARR_URL=https://sonarr.example.com,https://anime.example.com
+SONARR_API_KEY=key1,key2
+```
 
 ---
 
-# Ignore List
+## Architecture
 
-File:
+```
+Sonarr ─┐
+Radarr ─┤
+TMDB   ─┤──► scripts/run.py ──► data/*.json ──► scripts/generate.py ──► public/
+Plex   ─┤                                                                    │
+Tautulli┤                                                              auth_proxy
+Seerr  ─┘                                                             (FastAPI)
+                                                                            │
+                                                                         Browser
+```
 
-text cache/ignore_list.json 
-
-Example:
-
-json [   "tv:123",   "movie:456" ] 
-
-Ignored items do not appear in reports.
-
-Media Manager automatically removes entries that no longer exist.
-
----
-
-# Nginx Web Server
-
-Media Manager is served using a lightweight Nginx container.
-
-Generated dashboard:
-
-text public/index.html 
-
-is mounted into the container.
+- **Collection** (`scripts/run.py collect`) — fetches from all services, enriches data, scores for deletion, writes JSON to `data/`
+- **Generation** (`scripts/run.py generate`) — renders Jinja2 templates into static HTML in `public/`
+- **Auth proxy** (`auth_proxy/`) — FastAPI app that handles Plex OAuth login, serves the static files, and exposes settings/setup APIs
+- **Container** — the auth proxy runs in Docker/Podman via `compose.yaml`; the collection script runs on the host on a cron
 
 ---
 
-# docker-compose.yml
+## User mapping
 
-Example:
+If your Plex display names don't match your Overseerr usernames, edit `config/users.json` to link them:
 
-yaml services:   media-manager:     image: docker.io/library/nginx:alpine     container_name: media-manager      ports:       - "10450:80"      volumes:       - ./public:/usr/share/nginx/html:ro      restart: unless-stopped 
+```json
+[
+  {
+    "name": "alice",
+    "seerr_id": 1,
+    "plex_names": ["Alice", "alice@plex"]
+  }
+]
+```
 
-Change:
-
-yaml 10450 
-
-to any available Whatbox port.
-
----
-
-# Starting The Container
-
-Navigate to the project:
-
-bash cd ~/media-manager 
-
-Start:
-
-bash podman-compose up -d 
-
-Verify:
-
-bash podman ps 
-
-Expected:
-
-text media-manager Up 0.0.0.0:10450->80/tcp 
+This can also be managed through the Settings page in the dashboard.
 
 ---
 
-# Restarting
+## Logs
 
-After changing configuration:
+```bash
+# Collection logs
+tail -f logs/media_manager.log
 
-bash cd ~/media-manager  podman-compose down  podman-compose up -d 
-
----
-
-# Checking Logs
-
-Container logs:
-
-bash podman logs media-manager 
-
-Live:
-
-bash podman logs -f media-manager 
-
----
-
-# Testing The Site
-
-Generate dashboard:
-
-bash ~/media-manager/update_dashboard.sh 
-
-Open:
-
-text https://shenzhou.whatbox.ca:10450 
-
-or
-
-text https://your-domain.example.com:10450 
-
-You should see:
-
-- Storage chart
-- Movie posters
-- TV posters
-- Storage statistics
-
----
-
-# Homepage Integration
-
-Add a custom service:
-
-yaml - Media:     - Media Manager:         icon: mdi-chart-box         href: https://your-domain.example.com:10450         description: Storage Analytics 
-
-This creates a clickable tile inside Homepage.
-
----
-
-# Automation
-
-Edit cron:
-
-bash crontab -e 
-
-Example:
-
-cron 0 4 * * * /home/USERNAME/media-manager/update_dashboard.sh >> /home/USERNAME/media-manager/logs/cron.log 2>&1 
-
-Runs every day at:
-
-text 04:00 
-
----
-
-# Useful Commands
-
-Generate dashboard:
-
-bash ~/media-manager/update_dashboard.sh 
-
-Check logs:
-
-bash tail -f ~/media-manager/logs/media_check.log 
-
-Check container:
-
-bash podman ps 
-
-Restart container:
-
-bash podman restart media-manager 
-
-Stop container:
-
-bash podman stop media-manager 
-
-Start container:
-
-bash podman start media-manager 
-
----
-
-# Future Roadmap
-
-## Version 1.1
-
-- Storage totals
-- Largest shows
-- Largest movies
-- Recently added
-
-## Version 1.2
-
-- Genre analysis
-- Collection analysis
-- TMDB ratings
-
-## Version 2.0
-
-- Plex integration
-- Tautulli integration
-- Watch counts
-- Last watched data
-
-## Version 3.0
-
-- Storage value score
-- Space recovery recommendations
-- Interactive drilldowns
-- Collection management
-
----
-
-# Design Philosophy
-
-Media Manager is not a file browser.
-
-It is a media intelligence platform.
-
-The objective is to transform storage consumption into actionable information using metadata, ratings, collections, posters, and viewing behavior.# media-manager
-# media-manager
+# Container logs
+podman logs -f media-manager
+```
