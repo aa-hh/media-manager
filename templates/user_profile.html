@@ -7,7 +7,11 @@
 
 {% block content %}
 <div class="user-hero">
+  {% if user.avatar %}
+  <div class="user-avatar" style="background-image:url('{{ assets_root }}assets/{{ user.avatar }}');background-size:cover;background-position:center"></div>
+  {% else %}
   <div class="user-avatar">{{ user.name[0] | upper }}</div>
+  {% endif %}
   <div>
     <h1>{{ user.name }}</h1>
     <div class="sub">{{ user.requests_made }} requests · {{ user.total_plays }} plays</div>

@@ -18,6 +18,8 @@ Usage:
 """
 import sys
 import json
+import hashlib
+import requests
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -25,6 +27,7 @@ ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data"
 PUBLIC_DIR = ROOT / "public"
 CACHE_DIR = ROOT / "cache"
+AVATARS_DIR = CACHE_DIR / "avatars"
 LOG_DIR = ROOT / "logs"
 TEMPLATES_DIR = ROOT / "templates"
 ASSETS_DIR = ROOT / "assets"
@@ -287,9 +290,32 @@ def _load_webhook_transcode() -> tuple[dict, dict]:
     try:
         con = sqlite3.connect(db_path)
         rows = con.execute("""
+            WITH ranked AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY COALESCE(session_key, 'id:' || id)
+                        ORDER BY
+                            CASE lower(transcode_decision)
+                                WHEN 'transcode'    THEN 0
+                                WHEN 'copy'         THEN 1
+                                WHEN 'direct play'  THEN 2
+                                ELSE 3
+                            END,
+                            CASE lower(stream_video_resolution)
+                                WHEN '480'  THEN 1 WHEN '480p'  THEN 1
+                                WHEN '576'  THEN 2 WHEN '576p'  THEN 2
+                                WHEN '720'  THEN 3 WHEN '720p'  THEN 3
+                                WHEN '1080' THEN 4 WHEN '1080p' THEN 4
+                                WHEN '4k'   THEN 5 WHEN '2160'  THEN 5 WHEN '2160p' THEN 5
+                                ELSE 6
+                            END,
+                            event_at DESC
+                    ) AS rn
+                FROM plays
+                WHERE tmdb_id IS NOT NULL AND event = 'play'
+            )
             SELECT tmdb_id, media_type, transcode_decision, quality_profile
-            FROM plays
-            WHERE tmdb_id IS NOT NULL AND event = 'play'
+            FROM ranked WHERE rn = 1
         """).fetchall()
         con.close()
     except Exception as e:
@@ -579,7 +605,32 @@ def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
     return {"tv": merged_tv, "tv_seasons": merged_seasons, "movie": merged_movie, "users": users}
 
 
+def _cache_avatar(url: str) -> str:
+    """Downloads a Plex avatar image to AVATARS_DIR and returns its cached
+    relative path (e.g. "avatars/<hash>.jpg"), reusing any existing copy."""
+    if not url:
+        return ""
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    ext = Path(url.split("?")[0]).suffix or ".jpg"
+    if len(ext) > 5:
+        ext = ".jpg"
+    filename = f"{digest}{ext}"
+    dest = AVATARS_DIR / filename
+    if not dest.exists():
+        try:
+            AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+            resp = requests.get(url, timeout=30, verify=config.verify_ssl())
+            resp.raise_for_status()
+            dest.write_bytes(resp.content)
+        except Exception as e:
+            log.warn(f"Avatar cache: failed to download {url}: {e}")
+            return ""
+    return f"avatars/{filename}"
+
+
 def _build_users(shows: list[dict], movies: list[dict], ov_users: dict, tautulli_users: list) -> list[dict]:
+    avatar_urls = {u["friendly_name"]: u["avatar"] for u in tautulli_users if u.get("avatar")}
+
     all_names: set[str] = set()
     for item in shows + movies:
         req = item.get("request", {})
@@ -605,6 +656,7 @@ def _build_users(shows: list[dict], movies: list[dict], ov_users: dict, tautulli
                               and not item.get("requester_status", {}).get("watched", False)]
         users_out.append({
             "name": name,
+            "avatar": _cache_avatar(avatar_urls.get(name, "")),
             "requests_made": len(requests_made),
             "requested_item_ids": requests_made,
             "storage_requested_gb": round(storage_requested, 2),

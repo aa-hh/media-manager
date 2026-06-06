@@ -149,13 +149,18 @@
         <div class="table-card-title">Deletion Analysis</div>
         <div style="padding:16px 20px">
           {% set delbadge = deletion_badge(item) %}
+          {% set idel = item.get('deletion', {}) %}
           <div style="margin-bottom:12px">
             <span class="badge {{ delbadge[0] }}" style="font-size:.85rem;padding:4px 12px">{{ delbadge[1] }}</span>
-            <span style="font-size:.8rem;color:var(--text-muted);margin-left:8px">Score: {{ item.deletion.score }}/100</span>
+            {% if idel %}
+            <span style="font-size:.8rem;color:var(--text-muted);margin-left:8px">Score: {{ idel.score }}/100</span>
+            {% else %}
+            <span style="font-size:.8rem;color:var(--text-muted);margin-left:8px">No active storage</span>
+            {% endif %}
           </div>
-          {% if item.deletion.reasons %}
+          {% if idel.get('reasons') %}
           <ul class="deletion-reasons">
-            {% for r in item.deletion.reasons %}
+            {% for r in idel.reasons %}
               <li>{{ r }}</li>
             {% endfor %}
           </ul>

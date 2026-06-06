@@ -250,12 +250,18 @@ def test_load_webhook_transcode_aggregates_rows(dirs):
     import sqlite3
     db_path = dirs["data"] / "webhook_plays.db"
     con = sqlite3.connect(db_path)
-    con.execute("CREATE TABLE plays (tmdb_id INTEGER, media_type TEXT, transcode_decision TEXT, event TEXT, quality_profile TEXT)")
-    con.executemany("INSERT INTO plays VALUES (?, ?, ?, ?, ?)", [
-        (100, "show", "Direct Play", "play", None),
-        (100, "show", "Transcode", "play", "1080p"),
-        (200, "movie", "Copy", "play", None),
-        (None, "movie", "Direct Play", "play", None),
+    con.execute("""
+        CREATE TABLE plays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, event_at INTEGER, session_key TEXT,
+            tmdb_id INTEGER, media_type TEXT, transcode_decision TEXT, event TEXT, quality_profile TEXT,
+            stream_video_resolution TEXT
+        )
+    """)
+    con.executemany("INSERT INTO plays (event_at, session_key, tmdb_id, media_type, transcode_decision, event, quality_profile) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+        (1, "s1", 100, "show", "Direct Play", "play", None),
+        (1, "s2", 100, "show", "Transcode", "play", "1080p"),
+        (1, "s3", 200, "movie", "Copy", "play", None),
+        (1, "s4", None, "movie", "Direct Play", "play", None),
     ])
     con.commit()
     con.close()

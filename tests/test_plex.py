@@ -35,12 +35,12 @@ def test_get_disables_warnings_when_ssl_off(mocker):
 def test_get_accounts_filters_admin_and_unnamed(mocker):
     xml = """<MediaContainer>
         <Account id="0" name="admin"/>
-        <Account id="1" name="alice"/>
+        <Account id="1" name="alice" thumb="https://plex.tv/users/abc/avatar"/>
         <Account id="2" name=""/>
     </MediaContainer>"""
     mocker.patch.object(plex.requests, "get", return_value=_FakeResponse(xml))
     accounts = plex._get_accounts("http://plex.local", "tok")
-    assert accounts == [{"id": 1, "name": "alice"}]
+    assert accounts == [{"id": 1, "name": "alice", "avatar": "https://plex.tv/users/abc/avatar"}]
 
 
 # ── _extract_tmdb_id ──────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ def test_fetch_aggregates_tv_and_movie_watch_data(fetch_mocks):
     result = plex.fetch("http://plex.local", "tok", name_map={"alice": "Alice"})
 
     assert result["machine_id"] == "machine-1"
-    assert result["users"] == [{"user_id": 1, "friendly_name": "Alice"}]
+    assert result["users"] == [{"user_id": 1, "friendly_name": "Alice", "avatar": ""}]
 
     assert 200 in result["tv"]
     show_rec = result["tv"][200]["Alice"]

@@ -36,8 +36,9 @@ def _get_accounts(url: str, token: str) -> list[dict]:
     for acct in root:
         aid = acct.attrib.get("id")
         name = acct.attrib.get("name", "")
+        thumb = acct.attrib.get("thumb", "")
         if aid and aid != "0" and name:
-            accounts.append({"id": int(aid), "name": name})
+            accounts.append({"id": int(aid), "name": name, "avatar": thumb})
     return accounts
 
 
@@ -312,7 +313,11 @@ def fetch(
     log.info(f"Plex: aggregated watch data for {len(tv_watch)} shows, {len(movie_watch)} movies")
 
     user_list = [
-        {"user_id": a["id"], "friendly_name": (name_map or {}).get(a["name"], a["name"])}
+        {
+            "user_id": a["id"],
+            "friendly_name": (name_map or {}).get(a["name"], a["name"]),
+            "avatar": a.get("avatar", ""),
+        }
         for a in accounts
     ]
     return {

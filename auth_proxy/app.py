@@ -100,6 +100,7 @@ async def _init_plays_db() -> None:
                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
                 event                    TEXT,
                 event_at                 INTEGER,
+                session_key              TEXT,
                 rating_key               TEXT,
                 tmdb_id                  INTEGER,
                 media_type               TEXT,
@@ -108,6 +109,8 @@ async def _init_plays_db() -> None:
                 audio_decision           TEXT,
                 subtitle_decision        TEXT,
                 quality_profile          TEXT,
+                progress_percent         REAL,
+                view_offset              INTEGER,
                 src_container            TEXT,
                 src_video_codec          TEXT,
                 src_video_bitrate        TEXT,
@@ -131,6 +134,21 @@ async def _init_plays_db() -> None:
                 client_device            TEXT
             )
         """)
+        for ddl in (
+            "ALTER TABLE plays ADD COLUMN session_key TEXT",
+            "ALTER TABLE plays ADD COLUMN progress_percent REAL",
+            "ALTER TABLE plays ADD COLUMN view_offset INTEGER",
+        ):
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # column already exists
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plays_session_event_at ON plays(session_key, event_at, id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plays_event_session ON plays(event, session_key)"
+        )
         await db.commit()
 
 
@@ -1138,24 +1156,34 @@ async def tautulli_webhook(request: Request):
     except (ValueError, TypeError):
         tmdb_id = None
 
-    hdr_type = await _plex_hdr_type(rating_key)
+    event = body.get("event")
+    # Only worth the extra Plex round-trip on the initial play — pause/resume/
+    # stop/buffer events describe the same stream and don't change HDR type.
+    hdr_type = await _plex_hdr_type(rating_key) if event == "play" else None
+
+    progress_percent_raw = playback.get("progress_percent")
+    try:
+        progress_percent = float(progress_percent_raw) if progress_percent_raw not in (None, "") else None
+    except (ValueError, TypeError):
+        progress_percent = None
 
     async with aiosqlite.connect(PLAYS_DB) as db:
         await db.execute("""
             INSERT INTO plays (
-                event, event_at, rating_key, tmdb_id, media_type,
+                event, event_at, session_key, rating_key, tmdb_id, media_type,
                 transcode_decision, video_decision, audio_decision, subtitle_decision,
-                quality_profile,
+                quality_profile, progress_percent, view_offset,
                 src_container, src_video_codec, src_video_bitrate, src_video_resolution,
                 src_video_bit_depth, src_hdr_type, src_audio_codec, src_audio_channels,
                 stream_container, stream_video_codec, stream_video_bitrate,
                 stream_video_resolution, stream_audio_codec, stream_audio_channels,
                 client_user, client_friendly_name, client_platform, client_platform_version,
                 client_product, client_player, client_device
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
-            body.get("event"),
+            event,
             body.get("event_at"),
+            body.get("session_key"),
             rating_key,
             tmdb_id,
             media.get("media_type"),
@@ -1164,6 +1192,8 @@ async def tautulli_webhook(request: Request):
             playback.get("audio_decision"),
             playback.get("subtitle_decision"),
             playback.get("quality_profile"),
+            progress_percent,
+            playback.get("view_offset"),
             src.get("container"),
             src.get("video_codec"),
             src.get("video_bitrate"),

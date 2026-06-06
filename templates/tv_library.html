@@ -42,8 +42,8 @@
          data-plays="{{ show.total_plays }}"
          data-genres="{{ show.genres | join(',') | lower }}"
          data-unwatched="{{ '1' if (show.request.requested and not show.any_watched) else '0' }}"
-         data-delete="{{ show.deletion.recommendation }}"
-         data-delete-score="{{ show.deletion.score }}"
+         data-delete="{{ show.get('deletion', {}).get('recommendation', '') }}"
+         data-delete-score="{{ show.get('deletion', {}).get('score', 0) }}"
          >
       <a href="../tv/{{ show.slug }}/index.html">
         <div class="poster-wrap">

@@ -2,7 +2,12 @@ import sqlite3
 
 import pytest
 
-from generate import _compute_format_metrics, _compute_user_bandwidth, _compute_playback_analytics
+from generate import (
+    _compute_format_metrics,
+    _compute_user_bandwidth,
+    _compute_playback_analytics,
+    _compute_buffer_analytics,
+)
 
 
 PLAYS_COLUMNS = [
@@ -22,22 +27,26 @@ def db_factory(tmp_path):
         con = sqlite3.connect(db_path)
         con.execute("""
             CREATE TABLE plays (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_at INTEGER, session_key TEXT, progress_percent REAL,
                 event TEXT, transcode_decision TEXT, video_decision TEXT, audio_decision TEXT,
                 subtitle_decision TEXT, quality_profile TEXT, src_video_codec TEXT,
                 src_video_resolution TEXT, src_hdr_type TEXT, src_audio_codec TEXT,
                 src_audio_channels TEXT, stream_video_codec TEXT, stream_video_resolution TEXT,
-                client_platform TEXT, client_friendly_name TEXT,
+                client_platform TEXT, client_friendly_name TEXT, client_device TEXT,
                 stream_video_bitrate TEXT, src_video_bitrate TEXT,
                 tmdb_id INTEGER, media_type TEXT
             )
         """)
         for row in rows:
             defaults = {
+                "event_at": None, "session_key": None, "progress_percent": None,
                 "event": "play", "transcode_decision": None, "video_decision": None,
                 "audio_decision": None, "subtitle_decision": None, "quality_profile": None,
                 "src_video_codec": None, "src_video_resolution": None, "src_hdr_type": None,
                 "src_audio_codec": None, "src_audio_channels": None, "stream_video_codec": None,
                 "stream_video_resolution": None, "client_platform": None, "client_friendly_name": None,
+                "client_device": None,
                 "stream_video_bitrate": None, "src_video_bitrate": None,
                 "tmdb_id": None, "media_type": None,
             }
@@ -247,3 +256,177 @@ def test_compute_playback_analytics_no_worst_platform_when_all_direct(db_factory
              "client_friendly_name": f"u{i}"} for i in range(4)]
     result = _compute_playback_analytics(db_factory(rows))
     assert result["worst_platform"] is None
+
+
+# ── _compute_buffer_analytics ─────────────────────────────────────────────────
+
+def test_compute_buffer_analytics_missing_db_returns_none(tmp_path):
+    assert _compute_buffer_analytics(tmp_path / "missing.db") is None
+
+
+def test_compute_buffer_analytics_empty_table_returns_none(db_factory):
+    db_path = db_factory([])
+    assert _compute_buffer_analytics(db_path) is None
+
+
+def test_compute_buffer_analytics_ignores_rows_without_session_key(db_factory):
+    rows = [
+        {"event": "play", "event_at": 1, "session_key": None, "progress_percent": 5,
+         "client_friendly_name": "alice"},
+        {"event": "buffer", "event_at": 2, "session_key": None, "client_friendly_name": "alice"},
+    ]
+    assert _compute_buffer_analytics(db_factory(rows)) is None
+
+
+def test_compute_buffer_analytics_full_metric_breakdown(db_factory):
+    rows = [
+        # Session A: buffers twice, then quits (paused at 40%) within 2 minutes of
+        # the last buffer -> a buffer-TRIGGERED abandonment. No quality step-down.
+        {"event": "play", "event_at": 100, "session_key": "sessA", "progress_percent": 5,
+         "stream_video_resolution": "1080p", "client_friendly_name": "alice",
+         "client_platform": "Roku", "client_device": "TV"},
+        {"event": "buffer", "event_at": 110, "session_key": "sessA",
+         "client_friendly_name": "alice", "client_platform": "Roku", "client_device": "TV"},
+        {"event": "buffer", "event_at": 200, "session_key": "sessA",
+         "client_friendly_name": "alice", "client_platform": "Roku", "client_device": "TV"},
+        {"event": "pause", "event_at": 260, "session_key": "sessA", "progress_percent": 40,
+         "stream_video_resolution": "1080p", "client_friendly_name": "alice",
+         "client_platform": "Roku", "client_device": "TV"},
+
+        # Session B: buffers once early, plays on for ~16 minutes, then quits at 50%.
+        # Abandoned, but the buffer is too far removed (990s gap) to call it triggered.
+        {"event": "play", "event_at": 1000, "session_key": "sessB", "progress_percent": 5,
+         "stream_video_resolution": "1080p", "client_friendly_name": "bob",
+         "client_platform": "Chrome", "client_device": "Laptop"},
+        {"event": "buffer", "event_at": 1010, "session_key": "sessB",
+         "client_friendly_name": "bob", "client_platform": "Chrome", "client_device": "Laptop"},
+        {"event": "stop", "event_at": 2000, "session_key": "sessB", "progress_percent": 50,
+         "stream_video_resolution": "1080p", "client_friendly_name": "bob",
+         "client_platform": "Chrome", "client_device": "Laptop"},
+
+        # Session C: buffers, the stream steps down to a lower resolution afterward,
+        # but the viewer finishes anyway -> completed, with a behavior change.
+        {"event": "play", "event_at": 3000, "session_key": "sessC", "progress_percent": 2,
+         "stream_video_resolution": "1080p", "client_friendly_name": "carl",
+         "client_platform": "Apple TV", "client_device": "ATV"},
+        {"event": "buffer", "event_at": 3010, "session_key": "sessC",
+         "client_friendly_name": "carl", "client_platform": "Apple TV", "client_device": "ATV"},
+        {"event": "resume", "event_at": 3020, "session_key": "sessC", "progress_percent": 50,
+         "stream_video_resolution": "480p", "client_friendly_name": "carl",
+         "client_platform": "Apple TV", "client_device": "ATV"},
+        {"event": "stop", "event_at": 3500, "session_key": "sessC", "progress_percent": 97,
+         "stream_video_resolution": "480p", "client_friendly_name": "carl",
+         "client_platform": "Apple TV", "client_device": "ATV"},
+
+        # Session D: buffers once, finishes at the same resolution -> no behavior change.
+        {"event": "play", "event_at": 4000, "session_key": "sessD", "progress_percent": 1,
+         "stream_video_resolution": "720p", "client_friendly_name": "dana",
+         "client_platform": "Android", "client_device": "Phone"},
+        {"event": "buffer", "event_at": 4010, "session_key": "sessD",
+         "client_friendly_name": "dana", "client_platform": "Android", "client_device": "Phone"},
+        {"event": "resume", "event_at": 4020, "session_key": "sessD", "progress_percent": 60,
+         "stream_video_resolution": "720p", "client_friendly_name": "dana",
+         "client_platform": "Android", "client_device": "Phone"},
+        {"event": "stop", "event_at": 4500, "session_key": "sessD", "progress_percent": 98,
+         "stream_video_resolution": "720p", "client_friendly_name": "dana",
+         "client_platform": "Android", "client_device": "Phone"},
+
+        # Session E: never buffers, finishes -> only affects the general baseline.
+        {"event": "play", "event_at": 5000, "session_key": "sessE", "progress_percent": 1,
+         "stream_video_resolution": "1080p", "client_friendly_name": "erin",
+         "client_platform": "Web", "client_device": "Browser"},
+        {"event": "stop", "event_at": 5100, "session_key": "sessE", "progress_percent": 99,
+         "stream_video_resolution": "1080p", "client_friendly_name": "erin",
+         "client_platform": "Web", "client_device": "Browser"},
+    ]
+    result = _compute_buffer_analytics(db_factory(rows))
+
+    # General baseline: 2 of 5 sessions ended early (A and B), regardless of buffering.
+    assert result["general_abandon_rate_pct"] == round(2 / 5 * 100)
+
+    # 4 of the 5 sessions buffered (A, B, C, D); only A's quit followed its last
+    # buffer within the 120s window -> 1 buffer-triggered abandonment.
+    assert result["buffered_sessions"] == 4
+    assert result["buffer_triggered_abandon_rate_pct"] == round(1 / 4 * 100)
+    assert result["avg_buffers_until_triggered_abandon"] == 2.0
+
+    # 5 buffer incidents evaluated total (2 in A, 1 each in B/C/D); only C's was
+    # followed by a step-down (1080p -> 480p) -> 1/5.
+    assert result["quality_drop_after_buffer_pct"] == round(1 / 5 * 100)
+
+    # Of the 4 buffered sessions, only D finished without quitting or changing quality.
+    assert result["no_behavior_change_pct"] == round(1 / 4 * 100)
+
+    by_user = {row["user"]: row["buffer_count"] for row in result["buffer_by_user"]}
+    assert by_user == {"alice": 2, "bob": 1, "carl": 1, "dana": 1}
+
+    by_client = {(row["user"], row["client"]): row["buffer_count"] for row in result["buffer_by_client"]}
+    assert by_client == {
+        ("alice", "Roku / TV"): 2,
+        ("bob", "Chrome / Laptop"): 1,
+        ("carl", "Apple TV / ATV"): 1,
+        ("dana", "Android / Phone"): 1,
+    }
+
+
+def test_compute_buffer_analytics_collapses_rapid_repeated_buffer_firings(db_factory):
+    rows = [
+        {"event": "play", "event_at": 1000, "session_key": "sessX", "progress_percent": 5,
+         "stream_video_resolution": "1080p", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+        # Tautulli re-fires the Buffer Warning every ~9s for one sustained incident —
+        # these three should collapse into a single logical buffering event.
+        {"event": "buffer", "event_at": 1010, "session_key": "sessX", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+        {"event": "buffer", "event_at": 1019, "session_key": "sessX", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+        {"event": "buffer", "event_at": 1028, "session_key": "sessX", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+        # A genuinely separate incident later (gap > 15s) counts on its own.
+        {"event": "buffer", "event_at": 1100, "session_key": "sessX", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+        {"event": "stop", "event_at": 1200, "session_key": "sessX", "progress_percent": 96,
+         "stream_video_resolution": "1080p", "client_friendly_name": "fay",
+         "client_platform": "Fire TV", "client_device": "Stick"},
+    ]
+    result = _compute_buffer_analytics(db_factory(rows))
+
+    # 4 raw buffer rows -> 2 logical incidents (one cluster of 3 + one standalone)
+    assert result["buffered_sessions"] == 1
+    by_user = {row["user"]: row["buffer_count"] for row in result["buffer_by_user"]}
+    assert by_user == {"fay": 2}
+
+    by_client = {(row["user"], row["client"]): row["buffer_count"] for row in result["buffer_by_client"]}
+    assert by_client == {("fay", "Fire TV / Stick"): 2}
+
+
+def test_compute_buffer_analytics_session_resumed_before_threshold_is_not_abandoned(db_factory):
+    rows = [
+        {"event": "play", "event_at": 1, "session_key": "sess1", "progress_percent": 5,
+         "stream_video_resolution": "1080p", "client_friendly_name": "dana"},
+        {"event": "buffer", "event_at": 2, "session_key": "sess1", "client_friendly_name": "dana"},
+        {"event": "pause", "event_at": 3, "session_key": "sess1", "progress_percent": 30,
+         "stream_video_resolution": "1080p", "client_friendly_name": "dana"},
+        # Resumes after the pause, so the session should NOT be counted as abandoned
+        # even though the last pause was well below the threshold.
+        {"event": "resume", "event_at": 100, "session_key": "sess1", "progress_percent": 31,
+         "stream_video_resolution": "1080p", "client_friendly_name": "dana"},
+        {"event": "stop", "event_at": 200, "session_key": "sess1", "progress_percent": 97,
+         "stream_video_resolution": "1080p", "client_friendly_name": "dana"},
+    ]
+    result = _compute_buffer_analytics(db_factory(rows))
+    assert result["general_abandon_rate_pct"] == 0
+    assert result["buffer_triggered_abandon_rate_pct"] == 0
+    assert result["no_behavior_change_pct"] == 100
+
+
+def test_compute_buffer_analytics_pause_near_end_is_not_abandoned(db_factory):
+    rows = [
+        {"event": "play", "event_at": 1, "session_key": "sess1", "progress_percent": 5,
+         "stream_video_resolution": "1080p", "client_friendly_name": "erin"},
+        # Ends on a pause, but at 95% — treated as essentially finished, not abandoned.
+        {"event": "pause", "event_at": 2, "session_key": "sess1", "progress_percent": 95,
+         "stream_video_resolution": "1080p", "client_friendly_name": "erin"},
+    ]
+    result = _compute_buffer_analytics(db_factory(rows))
+    assert result["general_abandon_rate_pct"] == 0

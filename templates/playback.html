@@ -34,7 +34,7 @@
       <li>Click <strong style="color:var(--text)">Add a new notification agent</strong> and choose <strong style="color:var(--text)">Webhook</strong></li>
       <li>Set the <strong style="color:var(--text)">Webhook URL</strong> to <code style="background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:.82rem">&lt;this-server&gt;/api/tautulli/webhook</code></li>
       <li>Set <strong style="color:var(--text)">Method</strong> to <strong style="color:var(--text)">POST</strong></li>
-      <li>Under <strong style="color:var(--text)">Triggers</strong>, enable <strong style="color:var(--text)">Playback Start</strong> and <strong style="color:var(--text)">Watched</strong></li>
+      <li>Under <strong style="color:var(--text)">Triggers</strong>, enable <strong style="color:var(--text)">Playback Start</strong>, <strong style="color:var(--text)">Playback Pause</strong>, <strong style="color:var(--text)">Playback Resume</strong>, <strong style="color:var(--text)">Playback Stop</strong>, <strong style="color:var(--text)">Watched</strong>, <strong style="color:var(--text)">Buffer Warning</strong> (set its threshold to 1 and wait time to 0 so every buffer is reported), and <strong style="color:var(--text)">Transcode Decision Change</strong> (so mid-stream quality changes that Plex makes on its own are captured too)</li>
       <li>Under <strong style="color:var(--text)">Data</strong> → <strong style="color:var(--text)">JSON Data</strong>, paste the JSON below</li>
       <li>Save and test — play something in Plex to verify</li>
     </ol>
@@ -46,6 +46,7 @@
       <pre id="webhook-json-block" style="margin:0;padding:12px;font-size:.72rem;line-height:1.5;overflow:auto;max-height:220px;color:var(--text)">{
   "event": "{action}",
   "event_at": "{unixtime}",
+  "session_key": "{session_key}",
 
   "media": {
     "rating_key": "{rating_key}",
@@ -58,7 +59,9 @@
     "video_decision": "{video_decision}",
     "audio_decision": "{audio_decision}",
     "subtitle_decision": "{subtitle_decision}",
-    "quality_profile": "{quality_profile}"
+    "quality_profile": "{quality_profile}",
+    "progress_percent": "{progress_percent}",
+    "view_offset": "{view_offset}"
   },
 
   "source_quality": {
@@ -81,8 +84,8 @@
   },
 
   "client": {
-    "user": "{user}",
-    "friendly_name": "{friendly_name}",
+    "user": "{username}",
+    "friendly_name": "{user}",
     "platform": "{platform}",
     "platform_version": "{platform_version}",
     "product": "{product}",
@@ -248,6 +251,78 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if buffer_analytics %}
+  <div class="section">
+    <div class="section-title">Buffering &amp; Abandonment</div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:-8px 0 16px">Does buffering drive people to give up mid-stream, or push them toward lower quality?</p>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="label">General mid-stream abandon rate</div>
+        <div class="value">{{ (buffer_analytics.general_abandon_rate_pct ~ '%') if buffer_analytics.general_abandon_rate_pct is not none else '—' }}</div>
+        <div style="color:var(--text-muted);font-size:.78rem">of all sessions end early (paused/stopped before 90% watched), buffering or not — the overall baseline</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Buffer-triggered abandon rate</div>
+        <div class="value">{{ (buffer_analytics.buffer_triggered_abandon_rate_pct ~ '%') if buffer_analytics.buffer_triggered_abandon_rate_pct is not none else '—' }}</div>
+        <div style="color:var(--text-muted);font-size:.78rem">of sessions that buffered ({{ buffer_analytics.buffered_sessions }}) ended within 2 minutes of the last buffer</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg buffers before a buffer-triggered quit</div>
+        <div class="value">{{ buffer_analytics.avg_buffers_until_triggered_abandon if buffer_analytics.avg_buffers_until_triggered_abandon is not none else '—' }}</div>
+        <div style="color:var(--text-muted);font-size:.78rem">how many buffering incidents people tolerate before giving up</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Quality dropped after buffering</div>
+        <div class="value">{{ (buffer_analytics.quality_drop_after_buffer_pct ~ '%') if buffer_analytics.quality_drop_after_buffer_pct is not none else '—' }}</div>
+        <div style="color:var(--text-muted);font-size:.78rem">of buffer incidents were followed by a lower-resolution stream later in the session</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Buffered but no change in behavior</div>
+        <div class="value">{{ (buffer_analytics.no_behavior_change_pct ~ '%') if buffer_analytics.no_behavior_change_pct is not none else '—' }}</div>
+        <div style="color:var(--text-muted);font-size:.78rem">of sessions that buffered finished anyway, at the same quality, with no quit or step-down</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      {% if buffer_analytics.buffer_by_user %}
+      <div class="table-card">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:.82rem;color:var(--text-muted);font-weight:600">Buffer events by user</div>
+        <table class="data-table">
+          <thead><tr><th>User</th><th style="text-align:right">Buffer events</th></tr></thead>
+          <tbody>
+            {% for row in buffer_analytics.buffer_by_user %}
+            <tr>
+              <td style="font-weight:500">{{ row.user }}</td>
+              <td style="text-align:right;color:var(--text-muted)">{{ row.buffer_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if buffer_analytics.buffer_by_client %}
+      <div class="table-card">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:.82rem;color:var(--text-muted);font-weight:600">Buffer events by client / device</div>
+        <table class="data-table">
+          <thead><tr><th>User</th><th>Client / Device</th><th style="text-align:right">Buffer events</th></tr></thead>
+          <tbody>
+            {% for row in buffer_analytics.buffer_by_client %}
+            <tr>
+              <td style="font-weight:500">{{ row.user }}</td>
+              <td style="color:var(--text-muted);font-size:.85rem">{{ row.client }}</td>
+              <td style="text-align:right;color:var(--text-muted)">{{ row.buffer_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}

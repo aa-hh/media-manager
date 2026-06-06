@@ -42,8 +42,8 @@
          data-year="{{ movie.year or 0 }}"
          data-genres="{{ movie.genres | join(',') | lower }}"
          data-unwatched="{{ '1' if (movie.request.requested and not movie.any_watched) else '0' }}"
-         data-delete="{{ movie.deletion.recommendation }}"
-         data-delete-score="{{ movie.deletion.score }}"
+         data-delete="{{ movie.get('deletion', {}).get('recommendation', '') }}"
+         data-delete-score="{{ movie.get('deletion', {}).get('score', 0) }}"
          >
       <a href="../movies/{{ movie.slug }}/index.html">
         <div class="poster-wrap">

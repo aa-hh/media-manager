@@ -330,6 +330,115 @@
     .cl-list li::before { content: ''; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
     .cl-new::before { background: var(--accent); }
     .cl-fix::before { background: var(--green); }
+
+    /* ── Integrations tab ── */
+    .intg-grid { display: flex; flex-direction: column; gap: 20px; padding: 24px 32px; }
+
+    .intg-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .intg-card__header {
+      display: flex; align-items: flex-start; gap: 16px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .intg-card__icon {
+      width: 40px; height: 40px; border-radius: 10px; background: var(--bg3);
+      border: 1px solid var(--border); display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0;
+    }
+    .intg-card__icon img { width: 26px; height: 26px; object-fit: contain; }
+    .intg-card__icon svg { color: var(--text-muted); }
+    .intg-card__meta { flex: 1; min-width: 0; }
+    .intg-card__name { font-weight: 600; font-size: .95rem; }
+    .intg-card__desc { font-size: .82rem; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+    .intg-card__badge {
+      flex-shrink: 0; font-size: .7rem; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+      align-self: flex-start; margin-top: 2px;
+    }
+    .intg-card__badge--ok {
+      background: color-mix(in srgb, var(--green) 15%, transparent);
+      color: var(--green);
+    }
+    .intg-card__badge--warn {
+      background: color-mix(in srgb, var(--yellow) 15%, transparent);
+      color: var(--yellow);
+    }
+    .intg-card__badge--info {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      color: var(--accent);
+    }
+    .intg-card__badge--off {
+      background: var(--bg3); color: var(--text-muted);
+    }
+
+    .intg-card__body { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .intg-status {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 16px;
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+      font-size: .85rem; line-height: 1.5;
+    }
+    .intg-status__icon { flex-shrink: 0; margin-top: 1px; }
+    .intg-status--ok  { border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+    .intg-status--warn { border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+    .intg-status--off  {}
+
+    .intg-pills {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+      font-size: .8rem; color: var(--text-muted);
+    }
+    .intg-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 10px; font-size: .8rem; color: var(--text);
+    }
+    .intg-pill__label { color: var(--text-muted); }
+
+    .intg-steps { display: flex; flex-direction: column; gap: 16px; }
+    .intg-step { display: flex; gap: 14px; }
+    .intg-step__num {
+      flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+      background: var(--bg3); border: 1px solid var(--border);
+      font-size: .7rem; font-weight: 700; color: var(--text-muted);
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+    }
+    .intg-step__content { flex: 1; min-width: 0; }
+    .intg-step__title { font-size: .88rem; font-weight: 600; margin-bottom: 8px; }
+    .intg-step__desc { font-size: .82rem; color: var(--text-muted); margin-bottom: 10px; line-height: 1.5; }
+
+    .code-block {
+      position: relative;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+    }
+    .code-block pre {
+      margin: 0; padding: 14px 16px;
+      font-size: .78rem; line-height: 1.6; overflow-x: auto;
+      font-family: 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
+      color: var(--text);
+    }
+    .code-block__copy {
+      position: absolute; top: 8px; right: 8px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 9px; font-size: .72rem;
+      font-weight: 500; color: var(--text-muted); cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .code-block__copy:hover { color: var(--text); border-color: var(--text-muted); }
+    .code-block__copy.copied { color: var(--green); border-color: var(--green); }
+
+    .intg-link {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: .82rem; color: var(--accent); text-decoration: none;
+    }
+    .intg-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -366,9 +475,10 @@
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <div class="tab-bar__item active" onclick="switchTab('services')">Services</div>
-      <div class="tab-bar__item" onclick="switchTab('jobs')">Jobs</div>
-      <div class="tab-bar__item" onclick="switchTab('users')">User Mappings</div>
+      <div class="tab-bar__item active" data-tab="services" onclick="switchTab('services')">Services</div>
+      <div class="tab-bar__item" data-tab="jobs" onclick="switchTab('jobs')">Jobs</div>
+      <div class="tab-bar__item" data-tab="users" onclick="switchTab('users')">User Mappings</div>
+      <div class="tab-bar__item" data-tab="integrations" onclick="switchTab('integrations')">Integrations</div>
     </div>
 
     <!-- ── Services tab ── -->
@@ -537,6 +647,142 @@
       <footer style="padding:32px"><span>Media Manager</span></footer>
     </div><!-- #tab-users -->
 
+    <!-- ── Integrations tab ── -->
+    <div class="tab-panel" id="tab-integrations">
+      <div class="intg-grid">
+
+        <!-- ── Plex: Deletion Labels ── -->
+        <div class="intg-card" id="intg-plex-deletion">
+          <div class="intg-card__header">
+            <div class="intg-card__icon">
+              <img src="/assets/icons/plex.svg" alt="Plex">
+            </div>
+            <div class="intg-card__meta">
+              <div class="intg-card__name">Plex — Deletion Labels</div>
+              <div class="intg-card__desc">
+                When you click <strong>Delete in 2 Weeks</strong> on the Free Space page, Media Manager
+                adds a <code>Leaving Soon</code> label to that item in your Plex library.
+                The label is automatically removed when the item is deleted or the schedule is cancelled.
+              </div>
+            </div>
+            <div class="intg-card__badge intg-card__badge--off" id="intg-plex-badge">Checking…</div>
+          </div>
+          <div class="intg-card__body">
+            <div class="intg-status" id="intg-plex-status">
+              <span class="intg-status__icon">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </span>
+              <span id="intg-plex-status-text">Loading…</span>
+            </div>
+            <div class="intg-pills">
+              <span class="intg-pill"><span class="intg-pill__label">Label name</span> Leaving Soon</span>
+              <span class="intg-pill"><span class="intg-pill__label">Queue window</span> 14 days</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Kometa: Poster Overlays ── -->
+        <div class="intg-card">
+          <div class="intg-card__header">
+            <div class="intg-card__icon">
+              <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+                <path d="M3 9h18M9 21V9"/>
+              </svg>
+            </div>
+            <div class="intg-card__meta">
+              <div class="intg-card__name">Kometa — Poster Overlays</div>
+              <div class="intg-card__desc">
+                Kometa (formerly Plex Meta Manager) can read the <code>Leaving Soon</code> Plex label
+                and apply a banner overlay to posters, so users see content is going away before it disappears.
+                This is optional and requires Kometa to be installed separately.
+              </div>
+            </div>
+            <div class="intg-card__badge intg-card__badge--info">Manual setup</div>
+          </div>
+          <div class="intg-card__body">
+            <div class="intg-steps">
+
+              <div class="intg-step">
+                <div class="intg-step__num">1</div>
+                <div class="intg-step__content">
+                  <div class="intg-step__title">Create the overlay file</div>
+                  <div class="intg-step__desc">
+                    Save this as <code>leaving_soon.yml</code> in your Kometa config directory.
+                    Adjust colours and font size to match your other overlays.
+                  </div>
+                  <div class="code-block">
+                    <pre id="kometa-yml-1">overlays:
+  Leaving_Soon:
+    overlay:
+      name: text(LEAVING SOON)
+      font_size: 45
+      font_color: "#FFFFFF"
+      back_color: "#C0392B"
+      back_width: 1000
+      back_height: 70
+      vertical_align: top
+      horizontal_align: center
+      vertical_offset: 0
+    plex_search:
+      label: Leaving Soon</pre>
+                    <button class="code-block__copy" onclick="copyCode('kometa-yml-1', this)">Copy</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="intg-step">
+                <div class="intg-step__num">2</div>
+                <div class="intg-step__content">
+                  <div class="intg-step__title">Reference it in your Kometa config</div>
+                  <div class="intg-step__desc">
+                    Add the overlay file to each library in your <code>config.yml</code>.
+                    If you already have an <code>overlay_files</code> list, append the entry.
+                  </div>
+                  <div class="code-block">
+                    <pre id="kometa-yml-2">libraries:
+  Movies:
+    overlay_files:
+      - file: config/leaving_soon.yml
+
+  TV Shows:
+    overlay_files:
+      - file: config/leaving_soon.yml</pre>
+                    <button class="code-block__copy" onclick="copyCode('kometa-yml-2', this)">Copy</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="intg-step">
+                <div class="intg-step__num">3</div>
+                <div class="intg-step__content">
+                  <div class="intg-step__title">Run Kometa</div>
+                  <div class="intg-step__desc">
+                    Run Kometa manually or let your scheduled run pick it up. Items with the
+                    <code>Leaving Soon</code> label will have the overlay applied to their poster.
+                    When the label is removed (on deletion or cancellation), the overlay disappears on the next run.
+                  </div>
+                  <div class="code-block">
+                    <pre id="kometa-run">python kometa.py --run</pre>
+                    <button class="code-block__copy" onclick="copyCode('kometa-run', this)">Copy</button>
+                  </div>
+                  <div style="margin-top:10px">
+                    <a class="intg-link" href="https://github.com/aa-hh/media-manager/blob/main/docs/kometa-overlays.md" target="_blank">
+                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      Full setup guide
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div><!-- .intg-grid -->
+      <footer style="padding:32px"><span>Media Manager</span></footer>
+    </div><!-- #tab-integrations -->
+
   </div><!-- .main -->
 </div>
 
@@ -566,17 +812,48 @@ function toast(msg, type) {
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
-const TABS = ['services', 'jobs', 'users'];
+const TABS = ['services', 'jobs', 'users', 'integrations'];
 function switchTab(name) {
   document.querySelectorAll('.tab-bar__item').forEach(el => {
-    const t = el.textContent.trim().toLowerCase();
-    el.classList.toggle('active', t.startsWith(name.slice(0, 4)));
+    el.classList.toggle('active', el.dataset.tab === name);
   });
   TABS.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.classList.toggle('active', t === name);
   });
   if (name === 'jobs') { loadJobs(); loadSchedule(); }
+  if (name === 'integrations') { renderIntegrations(); }
+}
+
+// ── Integrations tab ─────────────────────────────────────────────────────────
+function copyCode(preId, btn) {
+  const text = document.getElementById(preId).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function renderIntegrations() {
+  const cfg = svcState.cfg;
+  const plexOk = !!(cfg.PLEX_URL && cfg.PLEX_TOKEN);
+  const badge = document.getElementById('intg-plex-badge');
+  const status = document.getElementById('intg-plex-status');
+  const statusText = document.getElementById('intg-plex-status-text');
+
+  if (plexOk) {
+    badge.textContent = 'Active';
+    badge.className = 'intg-card__badge intg-card__badge--ok';
+    status.className = 'intg-status intg-status--ok';
+    status.querySelector('.intg-status__icon').innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`;
+    statusText.innerHTML = 'Plex is connected — deletion labels work automatically. No extra setup needed.';
+  } else {
+    badge.textContent = 'Plex not connected';
+    badge.className = 'intg-card__badge intg-card__badge--warn';
+    status.className = 'intg-status intg-status--warn';
+    statusText.innerHTML = 'Plex is not connected. Configure Plex in the <a href="#" onclick="switchTab(\'services\');return false" style="color:var(--accent)">Services tab</a> to enable deletion labels.';
+  }
 }
 
 // ── Services tab ─────────────────────────────────────────────────────────────

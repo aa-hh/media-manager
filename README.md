@@ -19,7 +19,12 @@ Each user gets a profile page showing their total watch count, storage they've r
 Pulls all requests and watchlists from Overseerr/Seerr. Shows who requested each title, whether they've watched it, and flags content that was requested but never touched.
 
 ### Deletion scoring
-Every title gets a 0–100 deletion score based on: storage size, last watch date, play count, number of watchers, TMDB rating, and whether it was ever watched at all. Surfaces the clearest candidates for removal.
+Every title gets a 0–100 deletion score based on: storage size, last watch date, play count, number of watchers, TMDB rating, and whether it was ever watched at all. Surfaces the clearest candidates for removal on the **Free Space** page.
+
+### Scheduled deletion + Plex labels
+From the Free Space page you can schedule items for deletion in 14 days or delete them immediately. Scheduling adds a `Leaving Soon` label to the item in Plex, which Kometa can read to display a banner overlay on the poster so users know content is going away. The label is automatically removed when the item is deleted or the schedule is cancelled.
+
+→ [Kometa overlay setup guide](docs/kometa-overlays.md)
 
 ### Storage forecasting
 Tracks library size over time and projects how long until you run out of space based on recent growth rate.

@@ -207,7 +207,8 @@ def score_season(season: dict, show: dict) -> dict:
 
 def apply(items: list[dict]) -> list[dict]:
     for item in items:
-        item["deletion"] = score(item)
+        if item.get("size_gb", 0) > 0:
+            item["deletion"] = score(item)
         if item.get("type") == "show":
             for season in item.get("seasons", []):
                 if season.get("size_bytes", 0) > 0:

@@ -504,12 +504,35 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
     try:
         con = sqlite3.connect(db_path)
         rows = con.execute("""
+            WITH ranked AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY COALESCE(session_key, 'id:' || id)
+                        ORDER BY
+                            CASE lower(transcode_decision)
+                                WHEN 'transcode'    THEN 0
+                                WHEN 'copy'         THEN 1
+                                WHEN 'direct play'  THEN 2
+                                ELSE 3
+                            END,
+                            CASE lower(stream_video_resolution)
+                                WHEN '480'  THEN 1 WHEN '480p'  THEN 1
+                                WHEN '576'  THEN 2 WHEN '576p'  THEN 2
+                                WHEN '720'  THEN 3 WHEN '720p'  THEN 3
+                                WHEN '1080' THEN 4 WHEN '1080p' THEN 4
+                                WHEN '4k'   THEN 5 WHEN '2160'  THEN 5 WHEN '2160p' THEN 5
+                                ELSE 6
+                            END,
+                            event_at DESC
+                    ) AS rn
+                FROM plays WHERE event = 'play'
+            )
             SELECT transcode_decision, video_decision, audio_decision, subtitle_decision,
                    quality_profile, src_video_codec, src_video_resolution, src_hdr_type,
                    src_audio_codec, src_audio_channels,
                    stream_video_codec, stream_video_resolution,
                    client_platform, client_friendly_name
-            FROM plays WHERE event = 'play'
+            FROM ranked WHERE rn = 1
         """).fetchall()
         con.close()
     except Exception:
@@ -717,6 +740,183 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
         "audio_causes_by_platform": audio_causes_by_platform,
         "hdr_outcomes":      hdr_list,
         "user_transcode_quality": user_transcode_quality_list,
+    }
+
+
+# Lower number = lower quality. Used to detect quality step-downs after buffering.
+_RES_RANK = {
+    "480": 1, "480p": 1,
+    "576": 2, "576p": 2,
+    "720": 3, "720p": 3,
+    "1080": 4, "1080p": 4,
+    "4k": 5, "2160": 5, "2160p": 5,
+}
+
+_LIFECYCLE_EVENTS = ("play", "pause", "resume", "stop")
+_ABANDON_PROGRESS_THRESHOLD = 90  # below this, a session that ends on pause/stop counts as abandoned
+
+# Plex can silently step a stream's quality down mid-playback (between lifecycle/
+# buffer events). Tautulli's "Transcode Decision Change" trigger reports the new
+# stream_video_resolution whenever this happens — without it we'd only see quality
+# at lifecycle/buffer boundaries and miss most Plex-initiated step-downs.
+_QUALITY_CHANGE_EVENT = "transcode_decision_change"
+
+# Tautulli re-fires the Buffer Warning trigger every few seconds for as long as a
+# single sustained buffering incident lasts (especially with threshold=1/wait=0).
+# Consecutive buffer events closer together than this collapse into one incident.
+_BUFFER_INCIDENT_GAP_SECONDS = 15
+
+# A session only counts as "buffer-triggered abandonment" if the final pause/stop
+# follows the last buffer incident within this window — otherwise the quit is too
+# far removed from the buffering to credibly attribute it to that buffering.
+_BUFFER_ABANDON_GAP_SECONDS = 120
+
+
+def _compute_buffer_analytics(db_path: Path) -> dict | None:
+    """
+    Correlate buffer warnings with session abandonment, quality step-downs,
+    and per-user/client buffering rates. Reads the same webhook_plays.db as
+    _compute_playback_analytics, but needs the full lifecycle (play/pause/
+    resume/stop/buffer) rather than just 'play' rows.
+    """
+    import sqlite3
+    from collections import defaultdict
+
+    if not db_path.exists():
+        return None
+
+    tracked_events = _LIFECYCLE_EVENTS + ("buffer", _QUALITY_CHANGE_EVENT)
+    placeholders = ",".join("?" for _ in tracked_events)
+    try:
+        con = sqlite3.connect(db_path)
+        rows = con.execute(f"""
+            SELECT session_key, event, event_at, progress_percent,
+                   stream_video_resolution, client_friendly_name,
+                   client_platform, client_device
+            FROM plays
+            WHERE session_key IS NOT NULL AND event IN ({placeholders})
+            ORDER BY session_key, event_at, id
+        """, tracked_events).fetchall()
+        con.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    sessions: dict[str, list[tuple]] = defaultdict(list)
+    for row in rows:
+        sessions[row[0]].append(row)
+
+    total_sessions = 0
+    abandoned_sessions = 0
+    buffered_sessions = 0
+    buffer_triggered_abandons = 0
+    buffer_counts_at_triggered_abandon: list[int] = []
+    no_behavior_change_sessions = 0
+    buffer_by_user: dict[str, int] = defaultdict(int)
+    buffer_by_client: dict[tuple[str, str], int] = defaultdict(int)
+    quality_drop_after_buffer = 0
+    buffer_events_evaluated = 0
+
+    for session_key, events in sessions.items():
+        last_lifecycle = None       # (event, progress_percent, event_at)
+        buffer_count = 0
+        last_resolution = None
+        last_buffer_event_at = None
+        had_quality_drop = False
+        pending_buffer_resolutions: list[str | None] = []
+
+        for _, event, event_at, progress_percent, stream_res, friendly_name, platform, device in events:
+            if event == "buffer":
+                is_new_incident = (
+                    last_buffer_event_at is None
+                    or event_at is None
+                    or event_at - last_buffer_event_at > _BUFFER_INCIDENT_GAP_SECONDS
+                )
+                if event_at is not None:
+                    last_buffer_event_at = event_at
+                if not is_new_incident:
+                    continue
+
+                buffer_count += 1
+                user = (friendly_name or "Unknown").strip() or "Unknown"
+                client = (f"{platform or 'Unknown'} / {device or 'Unknown'}")
+                buffer_by_user[user] += 1
+                buffer_by_client[(user, client)] += 1
+                pending_buffer_resolutions.append(last_resolution)
+                continue
+
+            if stream_res:
+                norm = (stream_res or "").lower().strip()
+                # Resolve any buffers waiting to see if quality dropped afterward
+                for prior_res in pending_buffer_resolutions:
+                    buffer_events_evaluated += 1
+                    prior_rank = _RES_RANK.get((prior_res or "").lower().strip())
+                    new_rank = _RES_RANK.get(norm)
+                    if prior_rank is not None and new_rank is not None and new_rank < prior_rank:
+                        quality_drop_after_buffer += 1
+                        had_quality_drop = True
+                pending_buffer_resolutions = []
+                last_resolution = stream_res
+
+            if event in _LIFECYCLE_EVENTS:
+                last_lifecycle = (event, progress_percent, event_at)
+
+        if last_lifecycle is None:
+            continue
+        last_event, last_progress, last_event_at = last_lifecycle
+        abandoned = (
+            last_event in ("pause", "stop")
+            and last_progress is not None
+            and last_progress < _ABANDON_PROGRESS_THRESHOLD
+        )
+
+        total_sessions += 1
+        if abandoned:
+            abandoned_sessions += 1
+
+        if buffer_count > 0:
+            buffered_sessions += 1
+
+            buffer_triggered = (
+                abandoned
+                and last_buffer_event_at is not None
+                and last_event_at is not None
+                and (last_event_at - last_buffer_event_at) <= _BUFFER_ABANDON_GAP_SECONDS
+            )
+            if buffer_triggered:
+                buffer_triggered_abandons += 1
+                buffer_counts_at_triggered_abandon.append(buffer_count)
+
+            if not abandoned and not had_quality_drop:
+                no_behavior_change_sessions += 1
+
+    def _avg(values):
+        return round(sum(values) / len(values), 2) if values else None
+
+    def _pct(numerator, denominator):
+        return round(numerator / denominator * 100) if denominator else None
+
+    buffer_by_user_list = sorted(
+        [{"user": u, "buffer_count": c} for u, c in buffer_by_user.items()],
+        key=lambda x: -x["buffer_count"]
+    )[:10]
+
+    buffer_by_client_list = sorted(
+        [{"user": u, "client": c, "buffer_count": cnt} for (u, c), cnt in buffer_by_client.items()],
+        key=lambda x: -x["buffer_count"]
+    )[:10]
+
+    return {
+        "buffered_sessions": buffered_sessions,
+        "buffer_triggered_abandon_rate_pct": _pct(buffer_triggered_abandons, buffered_sessions),
+        "avg_buffers_until_triggered_abandon": _avg(buffer_counts_at_triggered_abandon),
+        "quality_drop_after_buffer_pct": _pct(quality_drop_after_buffer, buffer_events_evaluated),
+        "no_behavior_change_pct": _pct(no_behavior_change_sessions, buffered_sessions),
+        "general_abandon_rate_pct": _pct(abandoned_sessions, total_sessions),
+        "buffer_by_user": buffer_by_user_list,
+        "buffer_by_client": buffer_by_client_list,
     }
 
 
@@ -983,6 +1183,11 @@ def render_all(
     if assets_dir.exists():
         shutil.copytree(str(assets_dir), str(assets_out), dirs_exist_ok=True)
 
+    # Copy cached user avatars (downloaded from Plex during collection)
+    avatars_dir = public_dir.parent / "cache" / "avatars"
+    if avatars_dir.exists():
+        shutil.copytree(str(avatars_dir), str(assets_out / "avatars"), dirs_exist_ok=True)
+
     db_path = public_dir.parent / "data" / "webhook_plays.db"
 
     # Dashboard
@@ -1003,6 +1208,7 @@ def render_all(
         "analytics":            _compute_playback_analytics(db_path),
         "format_metrics":       _compute_format_metrics(db_path),
         "user_bandwidth":       _compute_user_bandwidth(db_path),
+        "buffer_analytics":     _compute_buffer_analytics(db_path),
         "tautulli_configured":  tautulli_configured,
     })
 

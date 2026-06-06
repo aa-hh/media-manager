@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "sql-expert": {
+      "source": "personamanagmentlayer/pcl",
+      "sourceType": "github",
+      "skillPath": "stdlib/data/sql-expert/SKILL.md",
+      "computedHash": "4ccaf822a9f2d7e2207f845f7cb765200e7f0ca0d554d491f20d16e6c4bad15e"
+    }
+  }
+}

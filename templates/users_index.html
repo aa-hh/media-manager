@@ -17,9 +17,13 @@
     <a href="../users/{{ user.name | lower | replace(' ', '-') }}/index.html" style="text-decoration:none">
       <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          {% if user.avatar %}
+          <div style="width:40px;height:40px;border-radius:50%;background-image:url('{{ assets_root }}assets/{{ user.avatar }}');background-size:cover;background-position:center;flex-shrink:0"></div>
+          {% else %}
           <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:white;flex-shrink:0">
             {{ user.name[0] | upper }}
           </div>
+          {% endif %}
           <div>
             <div style="font-weight:600">{{ user.name }}</div>
             <div style="font-size:.78rem;color:var(--text-muted)">{{ user.requests_made }} requests</div>
