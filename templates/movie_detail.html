@@ -26,12 +26,10 @@
         {% if item.certification %}<span>{{ item.certification }}</span>{% endif %}
         {% if item.rating %}<span style="color:#f59e0b">★ {{ "%.1f" | format(item.rating) }}</span>{% endif %}
         <span>{{ item.size_gb | gb }}</span>
-        {% set delbadge = deletion_badge(item) %}
-        <span class="badge {{ delbadge[0] }}">{{ delbadge[1] }}</span>
       </div>
       {% set fmt_tags = file_format_tags(item) %}
       {% if fmt_tags %}
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;margin-bottom:8px">
         {% for label, cls in fmt_tags %}
           <span class="fmt-tag {{ cls }}">{{ label }}</span>
         {% endfor %}
@@ -47,11 +45,12 @@
 
       <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         {% if item.request.requested %}
-          <span style="font-size:.85rem;color:rgba(255,255,255,.6)">Requested by</span>
-          <strong style="font-size:.9rem">{{ item.request.requester_name }}</strong>
-          <span style="color:rgba(255,255,255,.4);font-size:.8rem">{{ item.request.requested_at | fmt_date }}</span>
+          <span style="font-size:.9rem;color:rgba(255,255,255,.75);text-shadow:0 1px 3px rgba(0,0,0,.85)">Requested by</span>
           {% set rsl = requester_status_label(item) %}
-          {% if rsl %}<span class="badge {{ rsl[0] }}">{{ rsl[1] }}</span>{% endif %}
+          {% set rst = requester_status_tooltip(item) %}
+          {% set pill_class = rsl[0] if rsl else 'never' %}
+          {% if pill_class == 'never' %}{% set pill_class = 'requester-unwatched' %}{% endif %}
+          <span class="badge {{ pill_class }}" style="font-size:.9rem;padding:5px 12px;cursor:help" title="{{ rst }}">{{ item.request.requester_name }}</span>
         {% else %}
           <span class="badge library">Library Content</span>
         {% endif %}
@@ -169,10 +168,10 @@
         <table class="data-table">
           <tbody>
             <tr><td style="color:var(--text-muted)">Size</td><td>{{ item.size_gb | gb }}</td></tr>
-            {% if item.runtime %}<tr><td style="color:var(--text-muted)">Runtime</td><td>{{ item.runtime }} min</td></tr>{% endif %}
             {% if item.studio %}<tr><td style="color:var(--text-muted)">Studio</td><td>{{ item.studio }}</td></tr>{% endif %}
-            {% if item.year %}<tr><td style="color:var(--text-muted)">Year</td><td>{{ item.year }}</td></tr>{% endif %}
-            {% if item.rating %}<tr><td style="color:var(--text-muted)">Rating</td><td>★ {{ "%.1f" | format(item.rating) }}</td></tr>{% endif %}
+            {% if item.added_at %}<tr><td style="color:var(--text-muted)">Added</td><td>{{ item.added_at | fmt_date }}</td></tr>{% endif %}
+            {% if item.request.requested %}<tr><td style="color:var(--text-muted)">Requested</td><td>{{ item.request.requested_at | fmt_date }}</td></tr>{% endif %}
+            {% if item.file_info.audio_codec %}<tr><td style="color:var(--text-muted)">Audio</td><td>{{ item.file_info.audio_codec }}</td></tr>{% endif %}
             <tr><td style="color:var(--text-muted)">Total Plays</td><td>{{ item.total_plays }}</td></tr>
             {% if item.transcode_stats and item.transcode_stats.total %}
               {% set ts = item.transcode_stats %}

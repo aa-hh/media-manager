@@ -258,28 +258,34 @@ nav ul li a.active {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: .7rem;
-  font-weight: 600;
-  padding: 2px 7px;
+  font-size: .84rem;
+  font-weight: 700;
+  padding: 3px 9px;
   border-radius: 999px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.85);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
-.badge.completed  { background: rgba(34,197,94,.15);  color: var(--green); }
-.badge.watched    { background: rgba(99,102,241,.15); color: #818cf8; }
-.badge.never      { background: rgba(239,68,68,.12);  color: var(--red); }
-.badge.library    { background: rgba(148,163,184,.12); color: #94a3b8; }
-.badge.danger     { background: rgba(239,68,68,.15);  color: var(--red); }
-.badge.warning    { background: rgba(245,158,11,.15); color: var(--yellow); }
-.badge.safe       { background: rgba(34,197,94,.12);  color: var(--green); }
+.badge.completed  { background: rgba(34,197,94,.40);  color: #eafff2; border-color: rgba(34,197,94,.55); }
+.badge.watched    { background: rgba(99,102,241,.40); color: #eef0ff; border-color: rgba(99,102,241,.55); }
+.badge.never      { background: rgba(239,68,68,.40);  color: #fff0f0; border-color: rgba(239,68,68,.55); }
+.badge.library    { background: rgba(148,163,184,.40); color: #f4f6f9; border-color: rgba(148,163,184,.55); }
+.badge.danger     { background: rgba(239,68,68,.40);  color: #fff0f0; border-color: rgba(239,68,68,.55); }
+.badge.warning    { background: rgba(245,158,11,.40); color: #fff8ec; border-color: rgba(245,158,11,.55); }
+.badge.safe       { background: rgba(34,197,94,.40);  color: #eafff2; border-color: rgba(34,197,94,.55); }
+.badge.requester-unwatched { background: rgba(148,163,184,.40); color: #f4f6f9; border-color: rgba(148,163,184,.55); }
 
 /* ── File format / transcode tags ──────────────────────────── */
-.fmt-tag { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .04em; }
-.codec-h265 { background: rgba(99,102,241,.18); color: #a5b4fc; }
-.codec-h264 { background: rgba(14,165,233,.15); color: #7dd3fc; }
-.codec-other { background: rgba(148,163,184,.12); color: #94a3b8; }
-.res-4k  { background: rgba(234,179,8,.15); color: #fde047; }
-.res-hd  { background: rgba(148,163,184,.10); color: #94a3b8; }
-.tag-hdr { background: rgba(249,115,22,.15); color: #fb923c; }
-.tag-bit { background: rgba(168,85,247,.15); color: #c4b5fd; }
+.fmt-tag { display: inline-block; font-size: .82rem; font-weight: 800; padding: 3px 9px; border-radius: 4px; letter-spacing: .04em; text-shadow: 0 1px 3px rgba(0,0,0,.85); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 1px 4px rgba(0,0,0,.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.codec-h265 { background: rgba(99,102,241,.40); color: #eef0ff; border-color: rgba(99,102,241,.55); }
+.codec-h264 { background: rgba(14,165,233,.40); color: #eaf8ff; border-color: rgba(14,165,233,.55); }
+.codec-other { background: rgba(148,163,184,.40); color: #f4f6f9; border-color: rgba(148,163,184,.55); }
+.res-4k  { background: rgba(234,179,8,.40); color: #fffbe6; border-color: rgba(234,179,8,.55); }
+.res-hd  { background: rgba(148,163,184,.35); color: #f4f6f9; border-color: rgba(148,163,184,.5); }
+.tag-hdr { background: rgba(249,115,22,.40); color: #fff5ec; border-color: rgba(249,115,22,.55); }
+.tag-bit { background: rgba(168,85,247,.40); color: #f6efff; border-color: rgba(168,85,247,.55); }
 .transcode-direct { color: var(--green); font-size: .78rem; font-weight: 600; }
 .transcode-bad    { color: var(--red);   font-size: .78rem; font-weight: 600; }
 .transcode-mixed  { color: var(--yellow);font-size: .78rem; font-weight: 600; }
@@ -329,12 +335,17 @@ nav ul li a.active {
 }
 .detail-hero .hero-text .genre-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .genre-tag {
-  font-size: .73rem;
-  padding: 2px 9px;
+  font-size: .88rem;
+  font-weight: 700;
+  padding: 3px 11px;
   border-radius: 999px;
-  background: rgba(99,102,241,.2);
-  color: #a5b4fc;
-  border: 1px solid rgba(99,102,241,.3);
+  background: rgba(99,102,241,.40);
+  color: #eef0ff;
+  border: 1px solid rgba(99,102,241,.55);
+  text-shadow: 0 1px 3px rgba(0,0,0,.85);
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .detail-grid {
@@ -383,11 +394,16 @@ nav ul li a.active {
 
 /* ── Season bars ────────────────────────────────────────────── */
 .season-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
-.season-label { width: 80px; font-size: .83rem; font-weight: 600; flex-shrink: 0; }
-.season-bar-wrap { flex: 1; background: var(--bg3); border-radius: 4px; height: 20px; position: relative; overflow: hidden; }
+.season-label { width: 36px; font-size: .83rem; font-weight: 600; flex-shrink: 0; }
+.season-ep-count { width: 64px; font-size: .78rem; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
+.season-air-status { width: 50px; font-size: .76rem; font-weight: 600; flex-shrink: 0; white-space: nowrap; }
+.season-bar-wrap { flex: 1; background: var(--bg3); border-radius: 4px; height: 22px; position: relative; }
 .season-bar { height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; transition: width .3s; }
-.season-bar-label { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: .72rem; color: var(--text-muted); }
-.season-size { width: 70px; text-align: right; font-size: .82rem; color: var(--text-muted); flex-shrink: 0; }
+.season-bar-size { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: .72rem; font-weight: 600; text-align: center; pointer-events: none;
+  color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.season-watched { width: 72px; text-align: right; font-size: .78rem; color: var(--text-muted); flex-shrink: 0; }
+.season-plays { width: 60px; text-align: right; font-size: .78rem; color: var(--text-muted); flex-shrink: 0; }
 
 /* ── User page ──────────────────────────────────────────────── */
 .user-hero {

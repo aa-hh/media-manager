@@ -96,6 +96,20 @@ def _make_env(templates_dir: Path) -> Environment:
         else:
             return ("never", f"{name} never watched")
 
+    def requester_status_tooltip(item):
+        req = item.get("request", {})
+        if not req.get("requested"):
+            return None
+        rws = item.get("requester_status", {})
+        name = req.get("requester_name", "Requester")
+        if rws.get("completed"):
+            return f"{name} has completed this"
+        elif rws.get("watched"):
+            c = rws.get("completion_pct", 0)
+            return f"{name} is watching this ({c:.0f}% complete)"
+        else:
+            return f"{name} has not started watching this"
+
     def file_format_tags(item):
         """Returns list of (label, css_class) tuples for file format badges."""
         fi = item.get("file_info") or {}
@@ -113,10 +127,6 @@ def _make_env(templates_dir: Path) -> Environment:
             tags.append(("HDR", "tag-hdr"))
         if depth and int(depth) >= 10:
             tags.append(("10-bit", "tag-bit"))
-        # TV shows: use quality profile name
-        qp = item.get("quality_profile_name") or ""
-        if not tags and qp:
-            tags.append((qp, "codec-other"))
         return tags
 
     def transcode_label(item):
@@ -156,6 +166,7 @@ def _make_env(templates_dir: Path) -> Environment:
     env.filters["pct"] = pct
     env.globals["requester_label"] = requester_label
     env.globals["requester_status_label"] = requester_status_label
+    env.globals["requester_status_tooltip"] = requester_status_tooltip
     env.globals["deletion_badge"] = deletion_badge
     env.globals["top_genres"] = top_genres
     env.globals["file_format_tags"] = file_format_tags
@@ -839,6 +850,8 @@ def render_api(
                 "reachable": s.get("reachable"),
                 "update_available": s.get("update_available", False),
                 "current_version": s.get("current_version"),
+                "latest_version": s.get("latest_version"),
+                "changes": s.get("changes"),
             }
             for s in svc_list
         ],

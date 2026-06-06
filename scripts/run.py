@@ -480,15 +480,34 @@ def generate() -> None:
 # ── Merge helpers (unchanged from original) ───────────────────────────────────
 
 def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
-    def _int_keys(store: dict) -> dict:
-        """Normalise string tmdb_id keys to int (JSON round-trip converts int keys to str)."""
+    def _int_keys(store: dict, depth: int = 1) -> dict:
+        """Normalise string integer keys to int (JSON round-trip converts int keys to str).
+
+        depth=1 converts only the top-level keys; depth=2 also converts the next level
+        (used for tv_seasons whose structure is tmdb_id → season_number → ...).
+        """
         out = {}
         for k, v in store.items():
             try:
-                out[int(k)] = v
+                ik = int(k)
             except (ValueError, TypeError):
-                out[k] = v
+                ik = k
+            if depth > 1 and isinstance(v, dict):
+                v = _int_keys(v, depth - 1)
+            out[ik] = v
         return out
+
+    def _merge_entry(p: dict, t: dict) -> dict:
+        """Pick the more complete record by play count, but always keep the
+        most recent last_watched across both sources — a source "winning" on
+        play count shouldn't discard an older-but-real date the other source has.
+        """
+        winner = t if (t.get("plays", 0) >= p.get("plays", 0)) else p
+        dates = [d for d in (p.get("last_watched"), t.get("last_watched")) if d]
+        merged_entry = dict(winner)
+        if dates:
+            merged_entry["last_watched"] = max(dates)
+        return merged_entry
 
     def _merge_by_item(plex_store, taut_store):
         plex_store = _int_keys(plex_store)
@@ -503,7 +522,7 @@ def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
             for user in set(plex_users) | set(taut_users):
                 p = plex_users.get(user, {})
                 t = taut_users.get(user, {})
-                merged[tmdb_id][user] = t if (t.get("plays", 0) >= p.get("plays", 0)) else p
+                merged[tmdb_id][user] = _merge_entry(p, t)
         return merged
 
     merged_tv = _merge_by_item(plex_data.get("tv", {}), tautulli_data.get("tv", {}))
@@ -522,8 +541,8 @@ def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
              f"{len(merged_movie)} movies ({movie_count} user entries)")
 
     merged_seasons: dict = {}
-    plex_seasons = _int_keys(plex_data.get("tv_seasons", {}))
-    taut_seasons = _int_keys(tautulli_data.get("tv_seasons", {}))
+    plex_seasons = _int_keys(plex_data.get("tv_seasons", {}), depth=2)
+    taut_seasons = _int_keys(tautulli_data.get("tv_seasons", {}), depth=2)
     for tmdb_id in set(plex_seasons) | set(taut_seasons):
         merged_seasons[tmdb_id] = {}
         p_s = plex_seasons.get(tmdb_id, {})
@@ -535,7 +554,7 @@ def _merge_watch_data(plex_data: dict, tautulli_data: dict) -> dict:
             for user in set(p_users) | set(t_users):
                 p = p_users.get(user, {})
                 t = t_users.get(user, {})
-                merged_seasons[tmdb_id][snum][user] = t if (t.get("plays", 0) >= p.get("plays", 0)) else p
+                merged_seasons[tmdb_id][snum][user] = _merge_entry(p, t)
 
     return {"tv": merged_tv, "tv_seasons": merged_seasons, "movie": merged_movie, "users": users}
 

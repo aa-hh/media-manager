@@ -26,12 +26,10 @@
         {% if item.rating %}<span style="color:#f59e0b">★ {{ "%.1f" | format(item.rating) }}</span>{% endif %}
         <span>{{ item.size_gb | gb }}</span>
         <span>{{ item.episode_count }} episodes</span>
-        {% set delbadge = deletion_badge(item) %}
-        <span class="badge {{ delbadge[0] }}">{{ delbadge[1] }}</span>
       </div>
       {% set fmt_tags = file_format_tags(item) %}
       {% if fmt_tags %}
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;margin-bottom:8px">
         {% for label, cls in fmt_tags %}
           <span class="fmt-tag {{ cls }}">{{ label }}</span>
         {% endfor %}
@@ -48,11 +46,12 @@
       {# Requester status #}
       <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         {% if item.request.requested %}
-          <span style="font-size:.85rem;color:rgba(255,255,255,.6)">Requested by</span>
-          <strong style="font-size:.9rem">{{ item.request.requester_name }}</strong>
-          <span style="color:rgba(255,255,255,.4);font-size:.8rem">{{ item.request.requested_at | fmt_date }}</span>
+          <span style="font-size:.9rem;color:rgba(255,255,255,.75);text-shadow:0 1px 3px rgba(0,0,0,.85)">Requested by</span>
           {% set rsl = requester_status_label(item) %}
-          {% if rsl %}<span class="badge {{ rsl[0] }}">{{ rsl[1] }}</span>{% endif %}
+          {% set rst = requester_status_tooltip(item) %}
+          {% set pill_class = rsl[0] if rsl else 'never' %}
+          {% if pill_class == 'never' %}{% set pill_class = 'requester-unwatched' %}{% endif %}
+          <span class="badge {{ pill_class }}" style="font-size:.9rem;padding:5px 12px;cursor:help" title="{{ rst }}">{{ item.request.requester_name }}</span>
         {% else %}
           <span class="badge library">Library Content</span>
         {% endif %}
@@ -77,25 +76,42 @@
         <div class="table-card-title">Storage by Season</div>
         <div style="padding:16px 20px">
           {% set max_size = item.seasons | map(attribute='size_bytes') | max %}
+          {% set max_season_num = item.seasons | map(attribute='season_number') | max %}
           {% for season in item.seasons | sort(attribute='season_number') %}
           {% if season.size_bytes > 0 %}
           {% set sdel = season.get('deletion', {}) if season.get('deletion') else {} %}
+          {% set max_watched = season.watch_data.values() | map(attribute='unique_episodes_watched') | list | max if season.watch_data else 0 %}
+          {% set is_airing = season.season_number == max_season_num and item.status == 'continuing' and season.episode_count < season.total_episodes %}
           <div class="season-row">
             <div class="season-label">S{{ "%02d" | format(season.season_number) }}</div>
+            <div class="season-ep-count">{{ season.episode_count }}/{{ season.total_episodes }} ep</div>
+            <div class="season-air-status">
+              {% if is_airing %}
+                <span style="color:var(--yellow)">Airing</span>
+              {% else %}
+                <span style="color:var(--text-muted)">Aired</span>
+              {% endif %}
+            </div>
             <div class="season-bar-wrap">
               <div class="season-bar" style="width: {{ (season.size_bytes / max_size * 100) | round(1) }}%"></div>
-              <span class="season-bar-label">{{ season.episode_count }} ep</span>
+              <span class="season-bar-size">{{ season.size_gb | gb }}</span>
             </div>
-            <div class="season-size">{{ season.size_gb | gb }}</div>
             {% if sdel %}
               {% set sb = deletion_badge({'deletion': sdel}) %}
-              <span class="badge {{ sb[0] }}" style="font-size:.65rem;padding:1px 6px" title="{{ sdel.get('reasons', []) | join(', ') }}">{{ sb[1] }}</span>
+              <span class="badge {{ sb[0] }}" style="font-size:.65rem;padding:1px 6px;flex-shrink:0" title="{{ sdel.get('reasons', []) | join(', ') }}">{{ sb[1] }}</span>
             {% endif %}
-            {% if season.total_plays > 0 %}
-              <span style="font-size:.75rem;color:var(--text-muted);min-width:60px;text-align:right">{{ season.total_plays }} plays</span>
-            {% else %}
-              <span style="font-size:.75rem;color:var(--red);min-width:60px;text-align:right">unwatched</span>
-            {% endif %}
+            <div class="season-watched">
+              {% if season.total_episodes > 0 %}
+                <span style="{% if max_watched >= season.total_episodes %}color:var(--green){% endif %}">{{ max_watched }}/{{ season.total_episodes }}</span>
+              {% endif %}
+            </div>
+            <div class="season-plays">
+              {% if season.total_plays > 0 %}
+                {{ season.total_plays }} plays
+              {% else %}
+                <span style="color:var(--red)">unwatched</span>
+              {% endif %}
+            </div>
           </div>
           {% endif %}
           {% endfor %}
@@ -219,12 +235,13 @@
             <tr><td style="color:var(--text-muted)">Episodes</td><td>{{ item.episode_count }} / {{ item.total_episodes }}</td></tr>
             <tr><td style="color:var(--text-muted)">Seasons</td><td>{{ item.seasons | selectattr('size_bytes', 'gt', 0) | list | length }}</td></tr>
             <tr><td style="color:var(--text-muted)">Status</td><td>{{ item.status | capitalize }}</td></tr>
-            {% if item.year %}<tr><td style="color:var(--text-muted)">Year</td><td>{{ item.year }}</td></tr>{% endif %}
-            {% if item.rating %}<tr><td style="color:var(--text-muted)">Rating</td><td>★ {{ "%.1f" | format(item.rating) }}</td></tr>{% endif %}
+            {% if item.added_at %}<tr><td style="color:var(--text-muted)">Added</td><td>{{ item.added_at | fmt_date }}</td></tr>{% endif %}
+            {% if item.request.requested %}<tr><td style="color:var(--text-muted)">Requested</td><td>{{ item.request.requested_at | fmt_date }}</td></tr>{% endif %}
             <tr><td style="color:var(--text-muted)">Total Plays</td><td>{{ item.total_plays }}</td></tr>
             {% if item.quality_profile_name %}
             <tr><td style="color:var(--text-muted)">Quality</td><td>{{ item.quality_profile_name }}</td></tr>
             {% endif %}
+            {% if item.get('file_info', {}).get('audio_codec') %}<tr><td style="color:var(--text-muted)">Audio</td><td>{{ item.file_info.audio_codec }}</td></tr>{% endif %}
             {% if item.transcode_stats and item.transcode_stats.total %}
               {% set ts = item.transcode_stats %}
               {% set dp = (ts.direct / ts.total * 100) | round | int %}

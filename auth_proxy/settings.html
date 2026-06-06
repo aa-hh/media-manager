@@ -267,6 +267,69 @@
     .preset-btn.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); color: var(--accent); }
     .cron-input-row { display: flex; gap: 10px; align-items: flex-end; }
     .cron-next { font-size: .8rem; color: var(--text-muted); margin-top: 8px; min-height: 1.2em; }
+
+    /* ── Service Release Monitor ── */
+    .release-monitor { padding: 0 32px 24px; }
+    .release-monitor__header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .release-monitor__title { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+    .release-monitor__checked { font-size: .75rem; color: var(--text-muted); }
+    .release-monitor__grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
+    }
+    .release-item {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 16px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .release-item--update { border-color: var(--yellow); }
+    .release-item--down { border-color: var(--red); opacity: .7; }
+    .release-item__name { font-size: .85rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .release-item__versions { display: flex; flex-direction: column; gap: 3px; }
+    .release-item__ver { display: flex; align-items: center; gap: 8px; font-size: .75rem; }
+    .release-item__ver-label { color: var(--text-muted); min-width: 46px; }
+    .release-item__ver-val { font-family: monospace; color: var(--text); }
+    .release-item__ver-val--new { color: var(--yellow); font-family: monospace; }
+    .release-item__ver-val--ok { color: var(--green); }
+    .release-item__badge {
+      font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+      background: color-mix(in srgb, var(--yellow) 15%, transparent);
+      color: var(--yellow);
+    }
+    .release-item__footer { display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
+    .release-item__changelog-btn {
+      font-size: .7rem; font-weight: 500; padding: 2px 8px; border-radius: 4px;
+      background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+      cursor: pointer; transition: color .15s, border-color .15s;
+    }
+    .release-item__changelog-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .release-item__ok { font-size: .75rem; color: var(--green); }
+    .release-item__unreachable { font-size: .75rem; color: var(--red); }
+
+    /* ── Changelog modal ── */
+    .cl-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+      z-index: 200; align-items: center; justify-content: center;
+    }
+    .cl-overlay.open { display: flex; }
+    .cl-modal {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 24px 28px; max-width: 480px; width: 90%; max-height: 70vh;
+      overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.5);
+      position: relative;
+    }
+    .cl-modal__title { font-size: 1rem; font-weight: 600; margin-bottom: 18px; }
+    .cl-section-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--text-muted); margin: 14px 0 6px;
+    }
+    .cl-section-label:first-child { margin-top: 0; }
+    .cl-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 5px; }
+    .cl-list li { font-size: .82rem; padding-left: 14px; position: relative; line-height: 1.45; }
+    .cl-list li::before { content: ''; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
+    .cl-new::before { background: var(--accent); }
+    .cl-fix::before { background: var(--green); }
   </style>
 </head>
 <body>
@@ -289,9 +352,6 @@
       <li><a href="/users/index.html">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
         Users</a></li>
-      <li><a href="/services/index.html">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-        Services</a></li>
       <li><a href="/settings" class="active">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings</a></li>
@@ -317,6 +377,17 @@
       <!-- Service cards grid -->
       <div class="svc-grid" id="svc-cards-grid">
         <!-- Rendered by JS -->
+      </div>
+
+      <!-- Service Release Monitor -->
+      <div class="release-monitor">
+        <div class="release-monitor__header">
+          <span class="release-monitor__title">Service Release Monitor</span>
+          <span class="release-monitor__checked" id="release-checked"></span>
+        </div>
+        <div class="release-monitor__grid" id="release-grid">
+          <!-- Rendered by JS -->
+        </div>
       </div>
 
       <!-- General settings -->
@@ -470,6 +541,14 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Changelog modal -->
+<div class="cl-overlay" id="cl-modal" onclick="if(event.target===this)closeChangelog()">
+  <div class="cl-modal">
+    <div class="cl-modal__title" id="cl-modal-title"></div>
+    <div id="cl-modal-body"></div>
+  </div>
+</div>
 
 <script>
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -1146,8 +1225,100 @@ function formatAgo(dateStr) {
   return `${Math.round(diff / 86400)}d ago`;
 }
 
+// ── Service Release Monitor ───────────────────────────────────────────────────
+let _changelogData = {};
+
+function openChangelog(name) {
+  const d = _changelogData[name];
+  if (!d) return;
+  const fixes = (d.changes && d.changes.fixed) || [];
+  const news  = (d.changes && d.changes.new)   || [];
+  let body = '';
+  if (news.length) {
+    body += `<div class="cl-section-label">New</div><ul class="cl-list">` +
+      news.map(n => `<li class="cl-new">${esc(n)}</li>`).join('') + `</ul>`;
+  }
+  if (fixes.length) {
+    body += `<div class="cl-section-label">Fixed</div><ul class="cl-list">` +
+      fixes.map(f => `<li class="cl-fix">${esc(f)}</li>`).join('') + `</ul>`;
+  }
+  if (!body) body = `<p style="color:var(--text-muted);font-size:.85rem">No changelog details available.</p>`;
+
+  const versionLine = d.latest_version
+    ? `<span style="font-size:.8rem;color:var(--text-muted);font-weight:400;margin-left:8px">→ ${esc(d.latest_version)}</span>`
+    : '';
+
+  document.getElementById('cl-modal-title').innerHTML = esc(name) + versionLine;
+  document.getElementById('cl-modal-body').innerHTML = body;
+  document.getElementById('cl-modal').classList.add('open');
+}
+
+function closeChangelog() {
+  document.getElementById('cl-modal').classList.remove('open');
+}
+
+async function loadReleaseMonitor() {
+  try {
+    const r = await fetch('/api/services.json');
+    if (!r.ok) return;
+    const d = await r.json();
+    const checkedEl = document.getElementById('release-checked');
+    if (d.checked_at) {
+      const dt = new Date(d.checked_at);
+      checkedEl.textContent = `Last checked: ${dt.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+    }
+    _changelogData = {};
+    const grid = document.getElementById('release-grid');
+    grid.innerHTML = '';
+    (d.services || []).forEach(svc => {
+      _changelogData[svc.name] = svc;
+      const item = document.createElement('div');
+      const cls = !svc.reachable ? 'release-item--down' : svc.update_available ? 'release-item--update' : '';
+      item.className = `release-item ${cls}`.trim();
+      const dotClass = !svc.reachable ? 'status-dot--warn' : svc.update_available ? 'status-dot--warn' : 'status-dot--ok';
+
+      let versionsHTML = '';
+      if (svc.current_version) {
+        versionsHTML += `<div class="release-item__ver"><span class="release-item__ver-label">Current</span><span class="release-item__ver-val">${esc(svc.current_version)}</span></div>`;
+      }
+      if (svc.update_available && svc.latest_version && svc.latest_version !== svc.current_version) {
+        versionsHTML += `<div class="release-item__ver"><span class="release-item__ver-label">Newest</span><span class="release-item__ver-val--new">${esc(svc.latest_version)}</span></div>`;
+      }
+
+      const hasChangelog = svc.update_available && svc.changes &&
+        ((svc.changes.new && svc.changes.new.length) || (svc.changes.fixed && svc.changes.fixed.length));
+
+      let statusHTML = '';
+      if (!svc.reachable) {
+        statusHTML = `<span class="release-item__unreachable">Unreachable</span>`;
+      } else if (svc.update_available) {
+        statusHTML = `<div class="release-item__footer">
+          <span class="release-item__badge">Update available</span>
+          ${hasChangelog ? `<button class="release-item__changelog-btn" onclick="openChangelog('${esc(svc.name)}')">What's changed</button>` : ''}
+        </div>`;
+      } else if (svc.update_available === false) {
+        statusHTML = `<span class="release-item__ok">Up to date</span>`;
+      }
+
+      item.innerHTML = `
+        <div class="release-item__name">
+          <span class="status-dot ${dotClass}"></span>${esc(svc.name)}
+        </div>
+        <div class="release-item__versions">${versionsHTML}</div>
+        ${statusHTML}`;
+      grid.appendChild(item);
+    });
+    if (!d.services || !d.services.length) {
+      grid.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted)">No data — run the Services collector job to check versions.</span>';
+    }
+  } catch {
+    // silently skip if services.json not available
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 loadServices();
+loadReleaseMonitor();
 loadUsers();
 </script>
 </body>

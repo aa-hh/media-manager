@@ -110,6 +110,33 @@ if [[ ${#ids[@]} -gt 0 ]]; then
         podman rm -f "$id" >/dev/null 2>&1 || true
     done
 
+    # Step 3: escalate — some containers get stuck in "Stopping"/"Degraded" state
+    # where podman's own kill/rm can't reach the process (e.g. infra container
+    # blocked on a member that won't die). Find the real host PID for any
+    # survivors and SIGKILL it directly, then retry pod/container removal.
+    mapfile -t stuck_ids < <(podman ps -a --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
+    if [[ ${#stuck_ids[@]} -gt 0 ]]; then
+        for id in "${stuck_ids[@]}"; do
+            pid=$(podman inspect "$id" --format '{{.State.Pid}}' 2>/dev/null || true)
+            if [[ -n "$pid" && "$pid" != "0" ]]; then
+                kill -9 "$pid" >/dev/null 2>&1 || true
+            fi
+        done
+        sleep 2
+
+        # Retry pod removal first (cascades to infra + members)
+        mapfile -t pod_ids < <(podman pod ls --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
+        for pod_id in "${pod_ids[@]:-}"; do
+            [[ -z "$pod_id" ]] && continue
+            podman pod rm -f "$pod_id" >/dev/null 2>&1 || true
+        done
+
+        # Then any remaining standalone containers
+        for id in "${stuck_ids[@]}"; do
+            podman rm -f "$id" >/dev/null 2>&1 || true
+        done
+    fi
+
     spin_stop ok "removed containers and pods"
 fi
 
@@ -130,9 +157,16 @@ fi
 
 spin_stop ok "no conflicts"
 
+# ── Phase 2.5: Regenerate static site ────────────────────────────────────────
+# templates/*.html and assets/style.css are SOURCE files — the app actually
+# serves the pre-rendered pages in public/. Without this step, edits to
+# templates or styles silently won't appear after deploy.
+step "Regenerating site"
+run_quiet "rendering templates → public/" bash -c "cd '$ROOT' && . .venv/bin/activate && python scripts/run.py"
+
 # ── Phase 3: Build ────────────────────────────────────────────────────────────
 step "Building image"
-run_quiet "building image" $COMPOSE build
+run_quiet "building image" $COMPOSE build --no-cache --pull
 
 # ── Phase 4: Start ────────────────────────────────────────────────────────────
 step "Starting container"
