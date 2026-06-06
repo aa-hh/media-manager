@@ -169,6 +169,11 @@ def fetch(
         movie_meta.update(_get_library_metadata(url, token, sid))
     log.info(f"Plex: indexed {len(show_meta)} shows, {len(movie_meta)} movies")
 
+    # Full library tmdb_id -> ratingKey maps (covers unwatched items too — watch-data
+    # based _plex_key only exists for items someone has actually played).
+    show_keys = {meta["tmdb_id"]: meta["rating_key"] for meta in show_meta.values() if meta["tmdb_id"]}
+    movie_keys = {meta["tmdb_id"]: meta["rating_key"] for meta in movie_meta.values() if meta["tmdb_id"]}
+
     tv_watch: dict[int, dict] = {}
     tv_season_watch: dict[int, dict] = {}  # { tmdb_id: { season_num: { user: WatchStats } } }
     movie_watch: dict[int, dict] = {}
@@ -314,4 +319,5 @@ def fetch(
         "tv": tv_watch, "tv_seasons": tv_season_watch,
         "movie": movie_watch, "users": user_list,
         "machine_id": machine_id,
+        "tv_keys": show_keys, "movie_keys": movie_keys,
     }

@@ -351,7 +351,8 @@ def build() -> None:
     sonarr_items = _load_raw("sonarr", [])
     radarr_items = _load_raw("radarr", [])
     ov_data = _load_raw("overseerr", {"requests": [], "users": {}, "watchlist": []})
-    plex_data = _load_raw("plex", {"tv": {}, "movie": {}, "users": [], "machine_id": "", "tv_seasons": {}})
+    plex_data = _load_raw("plex", {"tv": {}, "movie": {}, "users": [], "machine_id": "", "tv_seasons": {},
+                                   "tv_keys": {}, "movie_keys": {}})
     tautulli_data = _load_raw("tautulli", {"tv": {}, "movie": {}, "users": [], "tv_seasons": {}})
 
     ov_requests: list = ov_data.get("requests", [])
@@ -403,16 +404,21 @@ def build() -> None:
         target = watchlist_tv if mt == "tv" else watchlist_movies
         target.setdefault(tid, set()).update(uids)
 
+    plex_keys_tv = _int_key_dict(plex_data.get("tv_keys", {}))
+    plex_keys_movie = _int_key_dict(plex_data.get("movie_keys", {}))
+
     shows = enrichment.build_shows(
         sonarr_items, tv_tmdb, ov_requests, watch_data["tv"],
         watch_data.get("tv_seasons", {}),
         transcode_stats=transcode_tv,
         watchlist=watchlist_tv,
+        plex_keys=plex_keys_tv,
     )
     movies = enrichment.build_movies(
         radarr_items, movie_tmdb, ov_requests, watch_data["movie"],
         transcode_stats=transcode_movie,
         watchlist=watchlist_movies,
+        plex_keys=plex_keys_movie,
     )
 
     deletion.apply(shows)

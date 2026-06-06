@@ -372,6 +372,22 @@ async def library_schedule_delete(request: Request):
     return JSONResponse({"ok": True, "scheduled_for": scheduled_for})
 
 
+@app.get("/api/library/pending")
+async def library_pending():
+    """Items currently scheduled for deletion — used to restore UI state on page load."""
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        cur = await db.execute(
+            "SELECT item_id, season_number, title, scheduled_for FROM pending_deletions WHERE status = 'pending'"
+        )
+        rows = await cur.fetchall()
+    return JSONResponse({
+        "pending": [
+            {"item_id": item_id, "season_number": season_number, "title": title, "scheduled_for": scheduled_for}
+            for item_id, season_number, title, scheduled_for in rows
+        ]
+    })
+
+
 @app.post("/api/library/cancel-delete")
 async def library_cancel_delete(request: Request):
     body = await request.json()

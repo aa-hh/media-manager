@@ -7,7 +7,7 @@
 
 {% macro actions(item_id, title, season_number=none) %}
 <td style="text-align:right;white-space:nowrap" data-row>
-  <button class="btn btn-ghost" data-action="schedule"
+  <button class="btn btn-orange" data-action="schedule"
           data-item-id="{{ item_id }}" data-title="{{ title }}"
           {% if season_number is not none %}data-season="{{ season_number }}"{% endif %}>
     Delete in 2 Weeks
@@ -190,45 +190,112 @@
     row.querySelectorAll('button').forEach((b) => b.disabled = true);
   }
 
-  function markDone(btn, label) {
+  function markDeleted(btn) {
     const row = btn.closest('[data-row]');
-    row.innerHTML = `<span style="color:var(--text-muted);font-size:.8rem">${label}</span>`;
+    row.innerHTML = `<span style="color:var(--text-muted);font-size:.8rem">Deleted — refresh after the next rebuild to update the library.</span>`;
   }
 
-  document.querySelectorAll('[data-action="schedule"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+  function scheduledRow(itemId, season, title, scheduledFor) {
+    const seasonAttr = season !== null && season !== undefined ? `data-season="${season}"` : '';
+    return `
+      <span style="color:var(--text-muted);font-size:.8rem">Scheduled for ${scheduledFor}</span>
+      <button class="btn btn-ghost" data-action="cancel" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Undo</button>
+    `;
+  }
+
+  function renderScheduled(row, itemId, season, title, scheduledFor, justScheduled) {
+    if (!justScheduled) {
+      row.innerHTML = scheduledRow(itemId, season, title, scheduledFor);
+      return;
+    }
+    // Show the confirmation message briefly, then settle into the compact "scheduled + undo" state.
+    row.innerHTML = `
+      <span style="color:var(--text-muted);font-size:.8rem">
+        Scheduled for ${scheduledFor} · "Leaving Soon" label applied in Plex
+      </span>
+    `;
+    setTimeout(() => {
+      if (document.body.contains(row)) row.innerHTML = scheduledRow(itemId, season, title, scheduledFor);
+    }, 4000);
+  }
+
+  function restoreButtons(row, itemId, season, title) {
+    const seasonAttr = season !== null && season !== undefined ? `data-season="${season}"` : '';
+    row.innerHTML = `
+      <button class="btn btn-orange" data-action="schedule" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete in 2 Weeks</button>
+      <button class="btn btn-danger" data-action="delete-now" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete Immediately</button>
+    `;
+  }
+
+  // Event delegation — rows get replaced dynamically (scheduled <-> buttons), so bind once on the document.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const row = btn.closest('[data-row]');
+    const itemId = btn.dataset.itemId;
+    const season = btn.dataset.season !== undefined ? parseInt(btn.dataset.season, 10) : null;
+    const title = btn.dataset.title;
+
+    if (action === 'schedule') {
       lockRow(btn);
       try {
         const data = await callApi('/api/library/schedule-delete', payloadFor(btn));
-        markDone(btn, `Scheduled for deletion on ${data.scheduled_for} · "Leaving Soon" label applied in Plex`);
-      } catch (e) {
-        alert(e.message);
-        btn.closest('[data-row]').querySelectorAll('button').forEach((b) => b.disabled = false);
+        renderScheduled(row, itemId, season, title, data.scheduled_for, true);
+      } catch (err) {
+        alert(err.message);
+        row.querySelectorAll('button').forEach((b) => b.disabled = false);
       }
-    });
-  });
-
-  document.querySelectorAll('[data-action="delete-now"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    } else if (action === 'delete-now') {
       pendingTarget = btn;
-      modalText.textContent = `Are you sure you want to permanently delete "${btn.dataset.title}"?`;
+      modalText.textContent = `Are you sure you want to permanently delete "${title}"?`;
       modal.classList.add('open');
-    });
+    } else if (action === 'cancel') {
+      lockRow(btn);
+      try {
+        await callApi('/api/library/cancel-delete', payloadFor(btn));
+        restoreButtons(row, itemId, season, title);
+      } catch (err) {
+        alert(err.message);
+        row.querySelectorAll('button').forEach((b) => b.disabled = false);
+      }
+    }
   });
 
   modalConfirm.addEventListener('click', async () => {
     if (!pendingTarget) return;
     const btn = pendingTarget;
+    const row = btn.closest('[data-row]');
     closeModal();
     lockRow(btn);
     try {
       await callApi('/api/library/delete-now', payloadFor(btn));
-      markDone(btn, 'Deleted — refresh after the next rebuild to update the library.');
+      markDeleted(btn);
     } catch (e) {
       alert(e.message);
-      btn.closest('[data-row]').querySelectorAll('button').forEach((b) => b.disabled = false);
+      row.querySelectorAll('button').forEach((b) => b.disabled = false);
     }
   });
+
+  // Restore "scheduled" state for items that already have a pending deletion.
+  (async () => {
+    try {
+      const data = await (await fetch('/api/library/pending')).json();
+      for (const p of (data.pending || [])) {
+        const season = p.season_number;
+        const selector = season !== null && season !== undefined
+          ? `[data-action="schedule"][data-item-id="${p.item_id}"][data-season="${season}"]`
+          : `[data-action="schedule"][data-item-id="${p.item_id}"]:not([data-season])`;
+        const btn = document.querySelector(selector);
+        if (btn) {
+          const row = btn.closest('[data-row]');
+          renderScheduled(row, p.item_id, season ?? null, p.title, p.scheduled_for, false);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load pending deletions:', e);
+    }
+  })();
 })();
 </script>
 {% endblock %}

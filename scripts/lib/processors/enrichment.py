@@ -47,6 +47,7 @@ def build_shows(
     season_watch: dict | None = None,
     transcode_stats: dict | None = None,
     watchlist: dict[int, set[int]] | None = None,
+    plex_keys: dict[int, str] | None = None,
 ) -> list[dict]:
     # Index overseerr requests by tmdb_id (most recent wins per item)
     req_by_tmdb: dict[int, dict] = {}
@@ -63,11 +64,11 @@ def build_shows(
         meta = tmdb_data.get(tmdb_id, {}) if tmdb_id else {}
         req = req_by_tmdb.get(tmdb_id) if tmdb_id else None
 
-        plex_key = None
+        plex_key = (plex_keys or {}).get(tmdb_id) if tmdb_id else None
         watch_data = {}
         if tmdb_id and tmdb_id in tautulli_tv:
             raw_watch = tautulli_tv[tmdb_id]
-            plex_key = raw_watch.get("_plex_key")
+            plex_key = raw_watch.get("_plex_key") or plex_key
             total_eps = item.get("total_episodes") or 1
             for user, wd in raw_watch.items():
                 if user.startswith("_"):
@@ -171,6 +172,7 @@ def build_movies(
     tautulli_movies: dict,
     transcode_stats: dict | None = None,
     watchlist: dict[int, set[int]] | None = None,
+    plex_keys: dict[int, str] | None = None,
 ) -> list[dict]:
     req_by_tmdb: dict[int, dict] = {}
     for r in overseerr_requests:
@@ -188,11 +190,11 @@ def build_movies(
         meta = tmdb_data.get(tmdb_id, {}) if tmdb_id else {}
         req = req_by_tmdb.get(tmdb_id) if tmdb_id else None
 
-        plex_key = None
+        plex_key = (plex_keys or {}).get(tmdb_id) if tmdb_id else None
         watch_data = {}
         if tmdb_id and tmdb_id in tautulli_movies:
             raw_watch = tautulli_movies[tmdb_id]
-            plex_key = raw_watch.get("_plex_key")
+            plex_key = raw_watch.get("_plex_key") or plex_key
             for user, wd in raw_watch.items():
                 if user.startswith("_"):
                     continue
