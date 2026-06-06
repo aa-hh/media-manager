@@ -80,14 +80,16 @@ def fetch(url: str, api_key: str) -> tuple[list[dict], dict[int, dict]]:
     return requests_out, users
 
 
-def fetch_watchlist(url: str, api_key: str, users: dict[int, dict]) -> set[tuple]:
+def fetch_watchlist(url: str, api_key: str, users: dict[int, dict]) -> dict[tuple, set[int]]:
     """
-    Returns a set of (media_type, tmdb_id) tuples for all items on any user's watchlist.
-    media_type is "tv" or "movie".
+    Returns a dict mapping (media_type, tmdb_id) -> set of overseerr user_ids who have
+    that item on their watchlist. media_type is "tv" or "movie". Keeping the per-user
+    attribution lets callers tell whether a *specific* user (e.g. the requester) is the
+    one waiting on it, rather than just whether it's on someone's watchlist.
     """
     headers = {"X-Api-Key": api_key}
     base = url.rstrip("/") + "/"
-    watchlist: set[tuple] = set()
+    watchlist: dict[tuple, set[int]] = {}
 
     for user_id in users:
         page = 1
@@ -104,7 +106,7 @@ def fetch_watchlist(url: str, api_key: str, users: dict[int, dict]) -> set[tuple
                 media_type = item.get("mediaType")
                 tmdb_id = item.get("tmdbId")
                 if media_type and tmdb_id:
-                    watchlist.add((media_type, int(tmdb_id)))
+                    watchlist.setdefault((media_type, int(tmdb_id)), set()).add(user_id)
             if page >= data.get("totalPages", 1):
                 break
             page += 1

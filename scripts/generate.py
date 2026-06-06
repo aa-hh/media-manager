@@ -96,6 +96,16 @@ def _make_env(templates_dir: Path) -> Environment:
         else:
             return ("never", f"{name} never watched")
 
+    def requester_status_pill(item):
+        """Like requester_status_label but always labelled 'Requested', for compact card badges."""
+        rsl = requester_status_label(item)
+        if not rsl:
+            return None
+        css_class = rsl[0]
+        if css_class == "never":
+            css_class = "requester-unwatched"
+        return (css_class, "Requested")
+
     def requester_status_tooltip(item):
         req = item.get("request", {})
         if not req.get("requested"):
@@ -166,6 +176,7 @@ def _make_env(templates_dir: Path) -> Environment:
     env.filters["pct"] = pct
     env.globals["requester_label"] = requester_label
     env.globals["requester_status_label"] = requester_status_label
+    env.globals["requester_status_pill"] = requester_status_pill
     env.globals["requester_status_tooltip"] = requester_status_tooltip
     env.globals["deletion_badge"] = deletion_badge
     env.globals["top_genres"] = top_genres
@@ -478,6 +489,15 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
     import sqlite3
     from collections import defaultdict
 
+    def _norm_stream_res(r: str) -> str:
+        r = (r or "").lower().strip()
+        if r in ("4k", "2160", "2160p"): return "4K"
+        if r in ("1080", "1080p"):       return "1080p"
+        if r in ("720", "720p"):         return "720p"
+        if r in ("576", "576p"):         return "576p"
+        if r in ("480", "480p"):         return "480p"
+        return r.upper() if r else "?"
+
     if not db_path.exists():
         return None
 
@@ -510,11 +530,14 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
     # Audio codec transcode rate: {codec: {transcode, total}}
     audio_codecs: dict[str, dict] = defaultdict(lambda: {"transcode": 0, "total": 0})
 
+    # Audio codec transcode rate by platform: {(codec, platform): {transcode, total}}
+    audio_codec_platforms: dict[tuple[str, str], dict] = defaultdict(lambda: {"transcode": 0, "total": 0})
+
     # HDR outcomes: {hdr_type: {direct, transcode, copy}}
     hdr_outcomes: dict[str, dict] = defaultdict(lambda: {"direct": 0, "transcode": 0, "copy": 0})
 
-    # Top transcoders: {user: count}
-    transcoders: dict[str, int] = defaultdict(int)
+    # Per-user transcode quality: {user: {resolution: count}}
+    user_transcode_quality: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for (td, vd, ad, sd, qp, src_vc, src_vr, hdr, src_ac, src_ach, stm_vc, stm_vr, platform, user) in rows:
         td = (td or "").lower()
@@ -556,14 +579,21 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
                 reason_counts["Subtitle burn"] += 1
             else:
                 reason_counts["Other"] += 1
-            transcoders[user] += 1
+            if video_t:
+                user_transcode_quality[user][_norm_stream_res(stm_vr)] += 1
 
         # Audio codec
         if src_ac:
-            ac = audio_codecs[src_ac.upper()]
+            codec = src_ac.upper()
+            ac = audio_codecs[codec]
             ac["total"] += 1
             if ad == "transcode":
                 ac["transcode"] += 1
+
+            acp = audio_codec_platforms[(codec, platform)]
+            acp["total"] += 1
+            if ad == "transcode":
+                acp["transcode"] += 1
 
         # HDR outcomes
         if hdr:
@@ -601,6 +631,32 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
         })
     audio_causes.sort(key=lambda x: -x["transcode_pct"])
 
+    # Audio codec transcode rate split by platform — grouped bar chart data.
+    # Only keep codecs/platforms that clear the same min-plays bar used above.
+    audio_codec_list = [c["codec"] for c in audio_causes]
+    platform_totals: dict[str, int] = defaultdict(int)
+    for (codec, platform), counts in audio_codec_platforms.items():
+        if codec in audio_codec_list and counts["total"] >= 2:
+            platform_totals[platform] += counts["total"]
+    top_platforms = sorted(platform_totals, key=lambda p: -platform_totals[p])[:5]
+
+    audio_causes_by_platform = {
+        "codecs": audio_codec_list,
+        "platforms": top_platforms,
+        "series": [
+            {
+                "platform": platform,
+                "data": [
+                    round(audio_codec_platforms[(codec, platform)]["transcode"]
+                          / audio_codec_platforms[(codec, platform)]["total"] * 100)
+                    if audio_codec_platforms[(codec, platform)]["total"] >= 2 else None
+                    for codec in audio_codec_list
+                ],
+            }
+            for platform in top_platforms
+        ],
+    } if audio_codec_list and top_platforms else None
+
     # HDR outcomes list
     hdr_list = []
     for hdr_type, counts in hdr_outcomes.items():
@@ -627,11 +683,20 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
         for k, v in reason_counts.items() if v > 0
     ]
 
-    # Top transcoders (top 8)
-    top_transcoders = sorted(
-        [{"user": u, "transcode_count": c} for u, c in transcoders.items()],
-        key=lambda x: -x["transcode_count"]
-    )[:8]
+    # Mode transcode quality per user — most common stream resolution each
+    # user gets transcoded to (top 8 by transcode volume)
+    user_transcode_quality_list = []
+    for u, counts in user_transcode_quality.items():
+        total_u = sum(counts.values())
+        mode_quality, mode_count = max(counts.items(), key=lambda kv: kv[1])
+        user_transcode_quality_list.append({
+            "user": u,
+            "transcode_count": total_u,
+            "mode_quality": mode_quality,
+            "mode_pct": round(mode_count / total_u * 100),
+        })
+    user_transcode_quality_list.sort(key=lambda x: -x["transcode_count"])
+    user_transcode_quality_list = user_transcode_quality_list[:8]
 
     # Worst platform (most transcodes, min 3 plays)
     worst_platform = None
@@ -649,8 +714,9 @@ def _compute_playback_analytics(db_path: Path) -> dict | None:
         "transcode_reasons": transcode_reasons,
         "platform_rates":    platform_rates,
         "audio_causes":      audio_causes,
+        "audio_causes_by_platform": audio_causes_by_platform,
         "hdr_outcomes":      hdr_list,
-        "top_transcoders":   top_transcoders,
+        "user_transcode_quality": user_transcode_quality_list,
     }
 
 
@@ -736,6 +802,39 @@ def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None,
         "shows": shows,
         "movies": movies,
         "users": users,
+    }
+
+
+def _build_delete_candidates_context(shows: list[dict], movies: list[dict]) -> dict:
+    """Top deletion candidates for the Free Space page — movies, series, and individual seasons."""
+    def _is_candidate(d: dict) -> bool:
+        return d.get("recommendation") in ("strong_delete", "suggest_delete")
+
+    movie_candidates = sorted(
+        [m for m in movies if _is_candidate(m.get("deletion", {}))],
+        key=lambda x: x["deletion"]["score"], reverse=True,
+    )
+    show_candidates = sorted(
+        [s for s in shows if _is_candidate(s.get("deletion", {}))],
+        key=lambda x: x["deletion"]["score"], reverse=True,
+    )
+    season_candidates = sorted(
+        [
+            {"show": show, "season": season}
+            for show in shows
+            for season in show.get("seasons", [])
+            if _is_candidate(season.get("deletion", {}))
+        ],
+        key=lambda x: x["season"]["deletion"]["score"], reverse=True,
+    )
+
+    return {
+        "movie_candidates": movie_candidates,
+        "show_candidates": show_candidates,
+        "season_candidates": season_candidates,
+        "movie_recovery_gb": round(sum(m["size_gb"] for m in movie_candidates), 1),
+        "show_recovery_gb": round(sum(s["size_gb"] for s in show_candidates), 1),
+        "season_recovery_gb": round(sum(c["season"]["size_gb"] for c in season_candidates), 1),
     }
 
 
@@ -889,6 +988,11 @@ def render_all(
     # Dashboard
     ctx = _build_dashboard_context(shows, movies, users, forecast, watchlist_ids, db_path=db_path)
     _render(env, "dashboard.html", public_dir / "index.html", ctx)
+
+    # Free Space (delete candidates)
+    (public_dir / "delete").mkdir(exist_ok=True)
+    _render(env, "delete_candidates.html", public_dir / "delete" / "index.html",
+            _build_delete_candidates_context(shows, movies))
 
     # Playback Analytics
     svc_list = (services or {}).get("services", []) if isinstance(services, dict) else []

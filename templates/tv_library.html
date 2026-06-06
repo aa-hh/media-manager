@@ -61,9 +61,10 @@
           <div class="card-meta">{{ show.year or "" }} · {{ show.size_gb | gb }}</div>
         </div>
         <div class="card-footer">
-          {% set rsl = requester_status_label(show) %}
+          {% set rsl = requester_status_pill(show) %}
+          {% set rst = requester_status_tooltip(show) %}
           {% if rsl %}
-            <span class="badge {{ rsl[0] }}">{{ rsl[1] }}</span>
+            <span class="badge {{ rsl[0] }}" title="{{ rst }}">{{ rsl[1] }}</span>
           {% else %}
             <span class="badge library">Library</span>
           {% endif %}

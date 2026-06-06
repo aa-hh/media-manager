@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% set active = "" %}
+{% set root = "../" %}
+{% set assets_root = "../" %}
+
+{% block title %}Free Space — Media Manager{% endblock %}
+
+{% macro actions(item_id, title, season_number=none) %}
+<td style="text-align:right;white-space:nowrap" data-row>
+  <button class="btn btn-ghost" data-action="schedule"
+          data-item-id="{{ item_id }}" data-title="{{ title }}"
+          {% if season_number is not none %}data-season="{{ season_number }}"{% endif %}>
+    Delete in 2 Weeks
+  </button>
+  <button class="btn btn-danger" data-action="delete-now"
+          data-item-id="{{ item_id }}" data-title="{{ title }}"
+          {% if season_number is not none %}data-season="{{ season_number }}"{% endif %}>
+    Delete Immediately
+  </button>
+</td>
+{% endmacro %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Free Space</h1>
+  <p>Top deletion candidates across your library, ranked by deletion score. Hover a score badge to see what's driving it.</p>
+</div>
+<div class="content">
+
+  <div class="table-card">
+    <div class="table-card-title">Movies — {{ movie_recovery_gb }} GB recoverable</div>
+    {% if movie_candidates %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Size</th>
+          <th>Score</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for movie in movie_candidates %}
+        {% set badge = deletion_badge(movie) %}
+        <tr>
+          <td><a href="{{ root }}movies/{{ movie.slug }}/index.html">{{ movie.title }}</a> <span style="color:var(--text-muted);font-size:.85rem">{{ movie.year or "" }}</span></td>
+          <td>{{ movie.size_gb | gb }}</td>
+          <td>
+            <span class="badge {{ badge[0] }}" title="{{ movie.deletion.reasons | join(' · ') }}">{{ badge[1] }} · {{ movie.deletion.score }}</span>
+          </td>
+          {{ actions(movie.id, movie.title) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p style="padding:16px 20px;color:var(--text-muted);font-size:.88rem">No movie delete candidates right now.</p>
+    {% endif %}
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-title">TV Series — {{ show_recovery_gb }} GB recoverable</div>
+    {% if show_candidates %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Size</th>
+          <th>Score</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for show in show_candidates %}
+        {% set badge = deletion_badge(show) %}
+        <tr>
+          <td><a href="{{ root }}tv/{{ show.slug }}/index.html">{{ show.title }}</a> <span style="color:var(--text-muted);font-size:.85rem">{{ show.year or "" }}</span></td>
+          <td>{{ show.size_gb | gb }}</td>
+          <td>
+            <span class="badge {{ badge[0] }}" title="{{ show.deletion.reasons | join(' · ') }}">{{ badge[1] }} · {{ show.deletion.score }}</span>
+          </td>
+          {{ actions(show.id, show.title) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p style="padding:16px 20px;color:var(--text-muted);font-size:.88rem">No series delete candidates right now.</p>
+    {% endif %}
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-title">TV Seasons — {{ season_recovery_gb }} GB recoverable</div>
+    <p style="padding:12px 20px 0;color:var(--text-muted);font-size:.8rem">Granular candidates — individual seasons worth clearing even when the show as a whole isn't.</p>
+    {% if season_candidates %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Show</th>
+          <th>Season</th>
+          <th>Size</th>
+          <th>Score</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in season_candidates %}
+        {% set show = c.show %}
+        {% set season = c.season %}
+        {% set badge = deletion_badge({'deletion': season.deletion}) %}
+        <tr>
+          <td><a href="{{ root }}tv/{{ show.slug }}/index.html">{{ show.title }}</a></td>
+          <td>Season {{ season.season_number }}</td>
+          <td>{{ season.size_gb | gb }}</td>
+          <td>
+            <span class="badge {{ badge[0] }}" title="{{ season.deletion.reasons | join(' · ') }}">{{ badge[1] }} · {{ season.deletion.score }}</span>
+          </td>
+          {{ actions(show.id, show.title ~ " — Season " ~ season.season_number, season.season_number) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p style="padding:16px 20px;color:var(--text-muted);font-size:.88rem">No season-level delete candidates right now.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Confirm modal for "Delete Immediately" ── #}
+<div id="delete-modal">
+  <div class="table-card" style="max-width:420px;width:90%;margin:0">
+    <div class="table-card-title" style="color:var(--red)">Delete Immediately?</div>
+    <div style="padding:18px 20px">
+      <p id="delete-modal-text" style="font-size:.92rem;line-height:1.5"></p>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-top:10px">
+        This permanently removes the files from Sonarr/Radarr. This cannot be undone.
+      </p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+        <button class="btn btn-ghost" id="delete-modal-cancel" style="margin-left:0">Cancel</button>
+        <button class="btn btn-danger solid" id="delete-modal-confirm" style="margin-left:0">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  #delete-modal {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(10,12,20,.7); align-items: center; justify-content: center;
+  }
+  #delete-modal.open { display: flex; }
+</style>
+<script>
+(function() {
+  const modal = document.getElementById('delete-modal');
+  const modalText = document.getElementById('delete-modal-text');
+  const modalCancel = document.getElementById('delete-modal-cancel');
+  const modalConfirm = document.getElementById('delete-modal-confirm');
+  let pendingTarget = null;
+
+  function closeModal() {
+    modal.classList.remove('open');
+    pendingTarget = null;
+  }
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  modalCancel.addEventListener('click', closeModal);
+
+  async function callApi(path, payload) {
+    const resp = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `Request failed (${resp.status})`);
+    return data;
+  }
+
+  function payloadFor(btn) {
+    const payload = { item_id: btn.dataset.itemId };
+    if (btn.dataset.season !== undefined) payload.season_number = parseInt(btn.dataset.season, 10);
+    return payload;
+  }
+
+  function lockRow(btn) {
+    const row = btn.closest('[data-row]');
+    row.querySelectorAll('button').forEach((b) => b.disabled = true);
+  }
+
+  function markDone(btn, label) {
+    const row = btn.closest('[data-row]');
+    row.innerHTML = `<span style="color:var(--text-muted);font-size:.8rem">${label}</span>`;
+  }
+
+  document.querySelectorAll('[data-action="schedule"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      lockRow(btn);
+      try {
+        const data = await callApi('/api/library/schedule-delete', payloadFor(btn));
+        markDone(btn, `Scheduled for deletion on ${data.scheduled_for} · "Leaving Soon" label applied in Plex`);
+      } catch (e) {
+        alert(e.message);
+        btn.closest('[data-row]').querySelectorAll('button').forEach((b) => b.disabled = false);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="delete-now"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pendingTarget = btn;
+      modalText.textContent = `Are you sure you want to permanently delete "${btn.dataset.title}"?`;
+      modal.classList.add('open');
+    });
+  });
+
+  modalConfirm.addEventListener('click', async () => {
+    if (!pendingTarget) return;
+    const btn = pendingTarget;
+    closeModal();
+    lockRow(btn);
+    try {
+      await callApi('/api/library/delete-now', payloadFor(btn));
+      markDone(btn, 'Deleted — refresh after the next rebuild to update the library.');
+    } catch (e) {
+      alert(e.message);
+      btn.closest('[data-row]').querySelectorAll('button').forEach((b) => b.disabled = false);
+    }
+  });
+})();
+</script>
+{% endblock %}

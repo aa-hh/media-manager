@@ -4,7 +4,7 @@ import subprocess
 import json
 from pathlib import Path
 from secrets import compare_digest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import httpx
 import aiosqlite
 from fastapi import FastAPI, Request
@@ -134,17 +134,267 @@ async def _init_plays_db() -> None:
         await db.commit()
 
 
+async def _init_deletions_db() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_deletions (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id       TEXT NOT NULL,
+                item_type     TEXT NOT NULL,
+                title         TEXT,
+                season_number INTEGER,
+                plex_key      TEXT,
+                scheduled_for TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                status        TEXT NOT NULL DEFAULT 'pending'
+            )
+        """)
+        await db.commit()
+
+
+LEAVING_SOON_LABEL = "Leaving Soon"
+LEAVING_SOON_DAYS = 14
+
+
+def _instances(url_var: str, key_var: str) -> list[tuple[str, str]]:
+    """Returns [(url, api_key), ...] for a comma-separated *_URL/*_API_KEY pair."""
+    cfg = _read_config_env()
+    urls = [u.strip() for u in (os.environ.get(url_var) or cfg.get(url_var, "")).split(",") if u.strip()]
+    keys = [k.strip() for k in (os.environ.get(key_var) or cfg.get(key_var, "")).split(",") if k.strip()]
+    return [(u, keys[i] if i < len(keys) else (keys[0] if keys else "")) for i, u in enumerate(urls)]
+
+
+def _find_item(item_id: str) -> dict | None:
+    try:
+        tv = json.loads((DATA_DIR / "tv.json").read_text())
+        movies = json.loads((DATA_DIR / "movies.json").read_text())
+        for item in tv + movies:
+            if item.get("id") == item_id:
+                return item
+    except Exception:
+        pass
+    return None
+
+
+async def _radarr_delete_movie(radarr_id: int) -> bool:
+    for url, key in _instances("RADARR_URL", "RADARR_API_KEY"):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=30) as client:
+                resp = await client.delete(
+                    f"{url.rstrip('/')}/api/v3/movie/{radarr_id}",
+                    params={"deleteFiles": "true", "addImportExclusion": "false"},
+                    headers={"X-Api-Key": key},
+                )
+                if resp.status_code in (200, 202, 204):
+                    return True
+        except Exception as e:
+            print(f"Radarr delete failed against {url}: {e}")
+    return False
+
+
+async def _sonarr_delete_series(sonarr_id: int) -> bool:
+    for url, key in _instances("SONARR_URL", "SONARR_API_KEY"):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=30) as client:
+                resp = await client.delete(
+                    f"{url.rstrip('/')}/api/v3/series/{sonarr_id}",
+                    params={"deleteFiles": "true"},
+                    headers={"X-Api-Key": key},
+                )
+                if resp.status_code in (200, 202, 204):
+                    return True
+        except Exception as e:
+            print(f"Sonarr delete failed against {url}: {e}")
+    return False
+
+
+async def _sonarr_delete_season(sonarr_id: int, season_number: int) -> bool:
+    for url, key in _instances("SONARR_URL", "SONARR_API_KEY"):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=30) as client:
+                resp = await client.get(
+                    f"{url.rstrip('/')}/api/v3/episodefile",
+                    params={"seriesId": sonarr_id},
+                    headers={"X-Api-Key": key},
+                )
+                if resp.status_code != 200:
+                    continue
+                file_ids = [f["id"] for f in resp.json() if f.get("seasonNumber") == season_number]
+                if not file_ids:
+                    continue
+                del_resp = await client.delete(
+                    f"{url.rstrip('/')}/api/v3/episodefile/bulk",
+                    json={"episodeFileIds": file_ids},
+                    headers={"X-Api-Key": key},
+                )
+                if del_resp.status_code in (200, 202, 204):
+                    return True
+        except Exception as e:
+            print(f"Sonarr season delete failed against {url}: {e}")
+    return False
+
+
+async def _delete_via_arr(item: dict, season_number: int | None) -> bool:
+    if item["type"] == "movie":
+        return await _radarr_delete_movie(item["radarr_id"])
+    if season_number is not None:
+        return await _sonarr_delete_season(item["sonarr_id"], season_number)
+    return await _sonarr_delete_series(item["sonarr_id"])
+
+
+async def _plex_set_label(rating_key: str | None, label: str, add: bool) -> None:
+    """Add or remove a Plex label on an item via the metadata edit-fields API.
+
+    NOTE: untested against a live server — Plex's batch tag-edit query parameter
+    format (label[].tag.tag / label[].tag.tag.tag-) has shifted across versions.
+    Verify this against your server and adjust if the label doesn't apply/clear.
+    """
+    if not (PLEX_SERVER_URL and PLEX_TOKEN and rating_key):
+        return
+    try:
+        params = {"X-Plex-Token": PLEX_TOKEN}
+        if add:
+            params["label[0].tag.tag"] = label
+            params["label.locked"] = "1"
+        else:
+            params["label[0].tag.tag-"] = label
+        async with httpx.AsyncClient(verify=False, timeout=15) as client:
+            await client.put(f"{PLEX_SERVER_URL}/library/metadata/{rating_key}", params=params)
+    except Exception as e:
+        print(f"Warning: could not {'add' if add else 'remove'} Plex label on {rating_key}: {e}")
+
+
+async def _maybe_remove_label(plex_key: str | None) -> None:
+    """Remove the Leaving Soon label only if no other pending row still references this Plex item."""
+    if not plex_key:
+        return
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM pending_deletions WHERE plex_key = ? AND status = 'pending'", (plex_key,)
+        )
+        row = await cur.fetchone()
+    if row and row[0] == 0:
+        await _plex_set_label(plex_key, LEAVING_SOON_LABEL, add=False)
+
+
+async def _cancel_pending_for(item_id: str, season_number: int | None) -> None:
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        if season_number is None:
+            cur = await db.execute(
+                "SELECT id, plex_key FROM pending_deletions WHERE item_id = ? AND season_number IS NULL AND status = 'pending'",
+                (item_id,),
+            )
+        else:
+            cur = await db.execute(
+                "SELECT id, plex_key FROM pending_deletions WHERE item_id = ? AND season_number = ? AND status = 'pending'",
+                (item_id, season_number),
+            )
+        rows = await cur.fetchall()
+        for row_id, _ in rows:
+            await db.execute("UPDATE pending_deletions SET status = 'cancelled' WHERE id = ?", (row_id,))
+        await db.commit()
+    for _, plex_key in rows:
+        await _maybe_remove_label(plex_key)
+
+
+async def _process_pending_deletions() -> None:
+    """Daily job: perform the actual delete for any pending row whose date has arrived."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        cur = await db.execute(
+            "SELECT id, item_id, item_type, season_number, plex_key FROM pending_deletions "
+            "WHERE status = 'pending' AND scheduled_for <= ?",
+            (today,),
+        )
+        rows = await cur.fetchall()
+
+    any_done = False
+    for row_id, item_id, item_type, season_number, plex_key in rows:
+        item = _find_item(item_id)
+        if not item:
+            continue
+        ok = await _delete_via_arr(item, season_number)
+        if not ok:
+            continue
+        async with aiosqlite.connect(PLAYS_DB) as db:
+            await db.execute("UPDATE pending_deletions SET status = 'done' WHERE id = ?", (row_id,))
+            await db.commit()
+        await _maybe_remove_label(plex_key)
+        any_done = True
+
+    if any_done:
+        asyncio.create_task(_run_pipeline_scheduled())
+
+
+@app.post("/api/library/delete-now")
+async def library_delete_now(request: Request):
+    body = await request.json()
+    item_id = str(body.get("item_id", ""))
+    season_number = body.get("season_number")
+    item = _find_item(item_id)
+    if not item:
+        return JSONResponse({"error": "Item not found."}, status_code=404)
+
+    ok = await _delete_via_arr(item, season_number)
+    if not ok:
+        return JSONResponse({"error": "Delete failed — check that Sonarr/Radarr are reachable."}, status_code=502)
+
+    await _cancel_pending_for(item_id, season_number)
+    asyncio.create_task(_run_pipeline_scheduled())
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/library/schedule-delete")
+async def library_schedule_delete(request: Request):
+    body = await request.json()
+    item_id = str(body.get("item_id", ""))
+    season_number = body.get("season_number")
+    item = _find_item(item_id)
+    if not item:
+        return JSONResponse({"error": "Item not found."}, status_code=404)
+
+    scheduled_for = (datetime.now(timezone.utc) + timedelta(days=LEAVING_SOON_DAYS)).date().isoformat()
+    item_type = "season" if season_number is not None else item["type"]
+    title = item["title"] if season_number is None else f"{item['title']} — Season {season_number}"
+
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        await db.execute(
+            "INSERT INTO pending_deletions "
+            "(item_id, item_type, title, season_number, plex_key, scheduled_for, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+            (item_id, item_type, title, season_number, item.get("plex_key"),
+             scheduled_for, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+    await _plex_set_label(item.get("plex_key"), LEAVING_SOON_LABEL, add=True)
+    return JSONResponse({"ok": True, "scheduled_for": scheduled_for})
+
+
+@app.post("/api/library/cancel-delete")
+async def library_cancel_delete(request: Request):
+    body = await request.json()
+    item_id = str(body.get("item_id", ""))
+    season_number = body.get("season_number")
+    await _cancel_pending_for(item_id, season_number)
+    return JSONResponse({"ok": True})
+
+
 @app.on_event("startup")
 async def startup():
     global server_machine_id
 
     await _init_plays_db()
+    await _init_deletions_db()
 
     # Start the APScheduler; fall back to default schedule if not explicitly configured
     _scheduler.start()
     DEFAULT_CRON = "0 */6 * * *"
     cron_expr = _read_config_env().get("CRON_SCHEDULE", DEFAULT_CRON).strip() or DEFAULT_CRON
     _schedule_pipeline(cron_expr)
+    _scheduler.add_job(_process_pending_deletions, CronTrigger(hour=3, minute=15, timezone=timezone.utc),
+                       id="pending_deletions", replace_existing=True)
 
     if not PLEX_SERVER_URL or not PLEX_TOKEN:
         print("Info: PLEX_URL/PLEX_TOKEN not configured — Plex server identity check skipped")

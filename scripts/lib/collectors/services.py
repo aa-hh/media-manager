@@ -260,7 +260,7 @@ def collect() -> dict:
         try:
             services.append(fn())
         except Exception as e:
-            log.warning(f"Service check failed for {fn.__name__}: {e}")
+            log.warn(f"Service check failed for {fn.__name__}: {e}")
             services.append({"name": fn.__name__.replace("_check_", "").title(), "reachable": False})
 
     configured = [s for s in services if not s.get("not_configured")]

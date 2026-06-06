@@ -34,7 +34,10 @@
       <div class="stat-card">
         <div class="label">Potential Recovery</div>
         <div class="value" style="color: var(--yellow)">{{ "%.1f"|format(potential_recovery_gb) }} GB</div>
-        <div class="sub">delete candidates</div>
+        <div class="sub">
+          delete candidates ·
+          <a href="{{ root }}delete/index.html" style="color:var(--accent);font-weight:600">Free Space →</a>
+        </div>
       </div>
       <div class="stat-card">
         <div class="label">Growth / Month</div>

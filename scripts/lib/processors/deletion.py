@@ -90,17 +90,18 @@ def score(item: dict) -> dict:
     else:
         reasons.append(f"Recently added ({days_since_arrived}d ago — grace period)")
 
-    # Inactivity (up to 15 pts)
+    # Inactivity: starting 3 months (90 days) after the last activity, the score climbs
+    # by a per-week rate that resets on new activity. Watchlisted items climb slower
+    # (0.25 pt/week) since someone still intends to watch them; others at 0.5 pt/week.
     # For never-watched items, use days_since_added as the inactivity proxy
+    on_watchlist = item.get("on_watchlist", False)
     effective_inactive = days_inactive if days_inactive is not None else (days_since_added if total_plays == 0 else None)
-    if effective_inactive is not None and effective_inactive > 365:
-        points += 15
-        reasons.append(f"Unwatched for {effective_inactive} days")
-    elif effective_inactive is not None and effective_inactive > 180:
-        points += 8
-        reasons.append(f"Unwatched for {effective_inactive} days")
-    elif effective_inactive is not None and effective_inactive > 90:
-        points += 4
+    if effective_inactive is not None and effective_inactive > 90:
+        weeks_over = (effective_inactive - 90) // 7
+        rate = 0.25 if on_watchlist else 0.5
+        inactivity_points = weeks_over * rate
+        points += inactivity_points
+        reasons.append(f"Unwatched for {effective_inactive} days (+{inactivity_points:.2f} inactivity pts)")
 
     # Low rating (up to 10 pts)
     if rating and rating < 5.0:
@@ -176,13 +177,15 @@ def score_season(season: dict, show: dict) -> dict:
     else:
         reasons.append(f"Show recently added ({days_since_arrived}d ago — grace period)")
 
-    # Inactivity — use show's added_at as proxy for never-watched seasons
+    # Inactivity — use show's added_at as proxy for never-watched seasons.
+    # Starting 90 days after the last activity, +0.5 pt per additional week of inactivity;
+    # resets whenever there's new activity.
     effective_inactive = days_inactive if days_inactive is not None else (days_since_arrived if total_plays == 0 else None)
-    if effective_inactive is not None and effective_inactive > 365:
-        points += 15
-        reasons.append(f"Unwatched for {effective_inactive} days")
-    elif effective_inactive is not None and effective_inactive > 180:
-        points += 8
+    if effective_inactive is not None and effective_inactive > 90:
+        weeks_over = (effective_inactive - 90) // 7
+        inactivity_points = weeks_over * 0.5
+        points += inactivity_points
+        reasons.append(f"Unwatched for {effective_inactive} days (+{inactivity_points:.1f} inactivity pts)")
 
     # Low show rating
     rating = show.get("rating") or 0

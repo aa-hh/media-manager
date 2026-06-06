@@ -330,11 +330,31 @@
       </div>
       {% endif %}
 
-      {# Top transcoding users #}
-      {% if analytics.top_transcoders %}
+      {# Mode transcode quality per user #}
+      {% if analytics.user_transcode_quality %}
       <div class="chart-card">
-        <div class="chart-title">Top transcoding users</div>
-        <canvas id="topTranscodersChart"></canvas>
+        <div class="chart-title">Mode transcode quality per user</div>
+        <table class="data-table" style="margin-top:8px">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th style="text-align:right">Transcodes</th>
+              <th>Most common quality</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in analytics.user_transcode_quality %}
+            <tr>
+              <td>{{ u.user }}</td>
+              <td style="text-align:right;color:var(--text-muted)">{{ u.transcode_count }}</td>
+              <td>
+                <span class="fmt-tag tag-hdr">{{ u.mode_quality }}</span>
+                <span style="color:var(--text-muted);font-size:.82rem"> ({{ u.mode_pct }}% of their transcodes)</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
       {% endif %}
 
@@ -418,7 +438,36 @@ new Chart(document.getElementById('transcodeReasonChart'), {
 })();
 {% endif %}
 
-{% if analytics and analytics.audio_causes %}
+{% if analytics and analytics.audio_causes_by_platform and analytics.audio_causes_by_platform.platforms | length > 1 %}
+(function() {
+  const grouped = {{ analytics.audio_causes_by_platform | tojson }};
+  const palette = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4'];
+  new Chart(document.getElementById('audioCodecChart'), {
+    type: 'bar',
+    data: {
+      labels: grouped.codecs,
+      datasets: grouped.series.map((s, i) => ({
+        label: s.platform,
+        data: s.data,
+        backgroundColor: palette[i % palette.length],
+        borderRadius: 4,
+      }))
+    },
+    options: {
+      ...PB_DEFAULTS,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: true, labels: { color: '#8892aa' } },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.x == null ? null : ` ${ctx.dataset.label}: ${ctx.parsed.x}% transcode rate` } }
+      },
+      scales: {
+        x: { min: 0, max: 100, ticks: { color: '#8892aa', callback: v => v + '%' }, grid: { color: '#2e3855' } },
+        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
+      }
+    }
+  });
+})();
+{% elif analytics and analytics.audio_causes %}
 (function() {
   const codecs = {{ analytics.audio_causes | tojson }};
   new Chart(document.getElementById('audioCodecChart'), {
@@ -444,30 +493,5 @@ new Chart(document.getElementById('transcodeReasonChart'), {
 })();
 {% endif %}
 
-{% if analytics and analytics.top_transcoders %}
-(function() {
-  const users = {{ analytics.top_transcoders | tojson }};
-  new Chart(document.getElementById('topTranscodersChart'), {
-    type: 'bar',
-    data: {
-      labels: users.map(u => u.user),
-      datasets: [{
-        data: users.map(u => u.transcode_count),
-        backgroundColor: 'rgba(239,68,68,.7)',
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      ...PB_DEFAULTS,
-      indexAxis: 'y',
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} transcodes` } } },
-      scales: {
-        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } },
-        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } }
-      }
-    }
-  });
-})();
-{% endif %}
 </script>
 {% endblock %}

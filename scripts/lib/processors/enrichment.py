@@ -46,6 +46,7 @@ def build_shows(
     tautulli_tv: dict,
     season_watch: dict | None = None,
     transcode_stats: dict | None = None,
+    watchlist: dict[int, set[int]] | None = None,
 ) -> list[dict]:
     # Index overseerr requests by tmdb_id (most recent wins per item)
     req_by_tmdb: dict[int, dict] = {}
@@ -157,6 +158,7 @@ def build_shows(
             "any_watched": any(
                 (w.get("completion_pct") or 0) >= 25 for w in watch_data.values()
             ),
+            "on_watchlist": bool(req) and req.get("requester_id") in (watchlist or {}).get(tmdb_id, set()),
         })
 
     return sorted(shows, key=lambda x: x["size_bytes"], reverse=True)
@@ -168,6 +170,7 @@ def build_movies(
     overseerr_requests: list[dict],
     tautulli_movies: dict,
     transcode_stats: dict | None = None,
+    watchlist: dict[int, set[int]] | None = None,
 ) -> list[dict]:
     req_by_tmdb: dict[int, dict] = {}
     for r in overseerr_requests:
@@ -245,6 +248,7 @@ def build_movies(
             "requester_status": rws,
             "total_plays": sum(w["plays"] for w in watch_data.values()),
             "any_watched": any(w["plays"] >= 1 for w in watch_data.values()),
+            "on_watchlist": bool(req) and req.get("requester_id") in (watchlist or {}).get(tmdb_id, set()),
         })
 
     return sorted(movies, key=lambda x: x["size_bytes"], reverse=True)

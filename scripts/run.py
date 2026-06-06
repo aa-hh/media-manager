@@ -177,7 +177,7 @@ def fetch_overseerr(_build: bool = True) -> None:
     _, seerr_id_to_canonical = _load_user_identities()
     requests_list: list = []
     users: dict = {}
-    watchlist: set = set()
+    watchlist: dict = {}
     if c["seerr_url"] and c["seerr_key"]:
         try:
             requests_list, users = overseerr.fetch(c["seerr_url"], c["seerr_key"])
@@ -197,7 +197,7 @@ def fetch_overseerr(_build: bool = True) -> None:
     (DATA_DIR / "raw_overseerr.json").write_text(json.dumps({
         "requests": requests_list,
         "users": users,
-        "watchlist": [[mt, tid] for mt, tid in sorted(watchlist)],
+        "watchlist": [[mt, tid, sorted(uids)] for (mt, tid), uids in sorted(watchlist.items())],
     }, indent=2))
     log.info(f"Overseerr: {len(requests_list)} requests saved")
     _record_run("overseerr")
@@ -356,7 +356,10 @@ def build() -> None:
 
     ov_requests: list = ov_data.get("requests", [])
     ov_users: dict = ov_data.get("users", {})
-    watchlist = ov_data.get("watchlist", [])
+    # Each entry is [media_type, tmdb_id, [user_ids]]; tolerate the older 2-element
+    # format (no per-user attribution) from caches written before this change.
+    watchlist_raw = ov_data.get("watchlist", [])
+    watchlist = [(entry[0], entry[1], set(entry[2]) if len(entry) > 2 else set()) for entry in watchlist_raw]
 
     # Load TMDB from cache (fetch_tmdb writes these; skip API calls here)
     def _load_tmdb_cache(path: Path) -> dict:
@@ -389,16 +392,27 @@ def build() -> None:
         transcode_movie = _merge_transcode(transcode_movie, wh_movie)
         log.info(f"Webhook DB: merged {len(wh_tv)} TV + {len(wh_movie)} movie transcode entries")
 
-    (DATA_DIR / "watchlist.json").write_text(json.dumps(watchlist, indent=2))
+    (DATA_DIR / "watchlist.json").write_text(json.dumps(
+        [[mt, tid, sorted(uids)] for mt, tid, uids in watchlist], indent=2
+    ))
+
+    # tmdb_id -> set of overseerr user_ids who have it watchlisted, per media type
+    watchlist_tv: dict[int, set[int]] = {}
+    watchlist_movies: dict[int, set[int]] = {}
+    for mt, tid, uids in watchlist:
+        target = watchlist_tv if mt == "tv" else watchlist_movies
+        target.setdefault(tid, set()).update(uids)
 
     shows = enrichment.build_shows(
         sonarr_items, tv_tmdb, ov_requests, watch_data["tv"],
         watch_data.get("tv_seasons", {}),
         transcode_stats=transcode_tv,
+        watchlist=watchlist_tv,
     )
     movies = enrichment.build_movies(
         radarr_items, movie_tmdb, ov_requests, watch_data["movie"],
         transcode_stats=transcode_movie,
+        watchlist=watchlist_movies,
     )
 
     deletion.apply(shows)
