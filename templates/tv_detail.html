@@ -112,6 +112,22 @@
                 <span style="color:var(--red)">unwatched</span>
               {% endif %}
             </div>
+            {% if item.get('id') %}
+            <div class="season-delete-actions" data-row>
+              <button class="btn btn-schedule btn-xs" data-action="schedule"
+                      data-item-id="{{ item.id }}"
+                      data-title="{{ item.title }} — Season {{ season.season_number }}"
+                      data-season="{{ season.season_number }}">
+                2 Weeks
+              </button>
+              <button class="btn btn-destroy solid btn-xs" data-action="delete-now"
+                      data-item-id="{{ item.id }}"
+                      data-title="{{ item.title }} — Season {{ season.season_number }}"
+                      data-season="{{ season.season_number }}">
+                Delete
+              </button>
+            </div>
+            {% endif %}
           </div>
           {% endif %}
           {% endfor %}
@@ -228,6 +244,18 @@
             {% endfor %}
           </ul>
           {% endif %}
+          {% if item.get('id') %}
+          <div class="detail-delete-actions" data-row>
+            <button class="btn btn-schedule" data-action="schedule"
+                    data-item-id="{{ item.id }}" data-title="{{ item.title }}">
+              Delete Series in 2 Weeks
+            </button>
+            <button class="btn btn-destroy solid" data-action="delete-now"
+                    data-item-id="{{ item.id }}" data-title="{{ item.title }}">
+              Delete Series Now
+            </button>
+          </div>
+          {% endif %}
         </div>
       </div>
 
@@ -246,7 +274,7 @@
             {% if item.quality_profile_name %}
             <tr><td style="color:var(--text-muted)">Quality</td><td>{{ item.quality_profile_name }}</td></tr>
             {% endif %}
-            {% if item.get('file_info', {}).get('audio_codec') %}<tr><td style="color:var(--text-muted)">Audio</td><td>{{ item.file_info.audio_codec }}</td></tr>{% endif %}
+            {% if item.file_info and item.file_info.audio_codec %}<tr><td style="color:var(--text-muted)">Audio</td><td>{{ item.file_info.audio_codec }}</td></tr>{% endif %}
             {% if item.transcode_stats and item.transcode_stats.total %}
               {% set ts = item.transcode_stats %}
               {% set dp = (ts.direct / ts.total * 100) | round | int %}
@@ -263,4 +291,148 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{# ── Delete modal ── #}
+<div id="delete-modal">
+  <div class="table-card" style="max-width:420px;width:90%;margin:0">
+    <div class="table-card-title" style="color:#c0392b">Delete Immediately?</div>
+    <div style="padding:18px 20px">
+      <p id="delete-modal-text" style="font-size:.92rem;line-height:1.5"></p>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-top:10px">
+        This permanently removes the files from Sonarr. This cannot be undone.
+      </p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+        <button class="btn btn-ghost" id="delete-modal-cancel" style="margin-left:0">Cancel</button>
+        <button class="btn btn-destroy solid" id="delete-modal-confirm" style="margin-left:0">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  #delete-modal {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(10,12,20,.7); align-items: center; justify-content: center;
+  }
+  #delete-modal.open { display: flex; }
+  .btn-schedule { border-color: var(--accent); color: var(--accent); }
+  .btn-schedule:hover:not(:disabled) { background: rgba(99,102,241,.12); }
+  .btn-destroy { border-color: #c0392b; color: #c0392b; }
+  .btn-destroy:hover:not(:disabled) { background: rgba(192,57,43,.12); }
+  .btn-destroy.solid { background: #c0392b; border-color: #c0392b; color: #fff; }
+  .btn-destroy.solid:hover:not(:disabled) { background: #a93226; }
+  .detail-delete-actions { margin-top:14px; display:flex; gap:8px; flex-wrap:wrap; }
+  .season-delete-actions { display:flex; gap:5px; flex-shrink:0; }
+  .btn-xs { padding: 3px 8px; font-size: .75rem; }
+</style>
+<script>
+(function() {
+  const modal = document.getElementById('delete-modal');
+  const modalText = document.getElementById('delete-modal-text');
+  const modalCancel = document.getElementById('delete-modal-cancel');
+  const modalConfirm = document.getElementById('delete-modal-confirm');
+  let pendingTarget = null;
+
+  function closeModal() { modal.classList.remove('open'); pendingTarget = null; }
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  modalCancel.addEventListener('click', closeModal);
+
+  async function callApi(path, payload) {
+    const resp = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `Request failed (${resp.status})`);
+    return data;
+  }
+
+  function payloadFor(btn) {
+    const payload = { item_id: btn.dataset.itemId };
+    if (btn.dataset.season !== undefined) payload.season_number = parseInt(btn.dataset.season, 10);
+    return payload;
+  }
+
+  function lockRow(btn) { btn.closest('[data-row]').querySelectorAll('button').forEach((b) => b.disabled = true); }
+
+  function markDeleted(btn) {
+    btn.closest('[data-row]').innerHTML = `<span style="color:var(--text-muted);font-size:.8rem">Deleted — refresh after the next rebuild to update the library.</span>`;
+  }
+
+  function scheduledRow(itemId, season, title, scheduledFor) {
+    const sa = season != null ? `data-season="${season}"` : '';
+    return `<span style="color:var(--text-muted);font-size:.8rem">Scheduled for ${scheduledFor}</span>
+      <button class="btn btn-ghost" data-action="cancel" data-item-id="${itemId}" ${sa} data-title="${title}">Undo</button>`;
+  }
+
+  function renderScheduled(row, itemId, season, title, scheduledFor, justScheduled) {
+    if (!justScheduled) { row.innerHTML = scheduledRow(itemId, season, title, scheduledFor); return; }
+    row.innerHTML = `<span style="color:var(--text-muted);font-size:.8rem">Scheduled for ${scheduledFor} · "Leaving Soon" label applied in Plex</span>`;
+    setTimeout(() => { if (document.body.contains(row)) row.innerHTML = scheduledRow(itemId, season, title, scheduledFor); }, 4000);
+  }
+
+  function restoreButtons(row, itemId, season, title) {
+    const sa = season != null ? `data-season="${season}"` : '';
+    const isSeason = season != null;
+    row.innerHTML = `
+      <button class="btn btn-schedule${isSeason ? ' btn-xs' : ''}" data-action="schedule" data-item-id="${itemId}" ${sa} data-title="${title}">${isSeason ? '2 Weeks' : 'Delete Series in 2 Weeks'}</button>
+      <button class="btn btn-destroy solid${isSeason ? ' btn-xs' : ''}" data-action="delete-now" data-item-id="${itemId}" ${sa} data-title="${title}">${isSeason ? 'Delete' : 'Delete Series Now'}</button>`;
+  }
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const row = btn.closest('[data-row]');
+    const itemId = btn.dataset.itemId;
+    const season = btn.dataset.season !== undefined ? parseInt(btn.dataset.season, 10) : null;
+    const title = btn.dataset.title;
+
+    if (action === 'schedule') {
+      lockRow(btn);
+      try {
+        const data = await callApi('/api/library/schedule-delete', payloadFor(btn));
+        renderScheduled(row, itemId, season, title, data.scheduled_for, true);
+      } catch (err) { alert(err.message); row.querySelectorAll('button').forEach((b) => b.disabled = false); }
+    } else if (action === 'delete-now') {
+      pendingTarget = btn;
+      modalText.textContent = `Are you sure you want to permanently delete "${title}"?`;
+      modal.classList.add('open');
+    } else if (action === 'cancel') {
+      lockRow(btn);
+      try {
+        await callApi('/api/library/cancel-delete', payloadFor(btn));
+        restoreButtons(row, itemId, season, title);
+      } catch (err) { alert(err.message); row.querySelectorAll('button').forEach((b) => b.disabled = false); }
+    }
+  });
+
+  modalConfirm.addEventListener('click', async () => {
+    if (!pendingTarget) return;
+    const btn = pendingTarget;
+    const row = btn.closest('[data-row]');
+    closeModal();
+    lockRow(btn);
+    try {
+      await callApi('/api/library/delete-now', payloadFor(btn));
+      markDeleted(btn);
+    } catch (e) { alert(e.message); row.querySelectorAll('button').forEach((b) => b.disabled = false); }
+  });
+
+  (async () => {
+    try {
+      const data = await (await fetch('/api/library/pending')).json();
+      for (const p of (data.pending || [])) {
+        const season = p.season_number;
+        const selector = season != null
+          ? `[data-action="schedule"][data-item-id="${p.item_id}"][data-season="${season}"]`
+          : `[data-action="schedule"][data-item-id="${p.item_id}"]:not([data-season])`;
+        const btn = document.querySelector(selector);
+        if (btn) {
+          const row = btn.closest('[data-row]');
+          renderScheduled(row, p.item_id, season ?? null, p.title, p.scheduled_for, false);
+        }
+      }
+    } catch (e) { console.warn('Could not load pending deletions:', e); }
+  })();
+})();
+</script>
 {% endblock %}

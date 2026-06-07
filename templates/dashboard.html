@@ -205,14 +205,9 @@
         <canvas id="chartContentAge"></canvas>
       </div>
       <div class="chart-card">
-        <h3>TV — Resolution × Codec</h3>
-        <canvas id="chartResCodecTv"></canvas>
+        <h3>Movies — Resolution × Codec</h3>
+        <canvas id="chartResCodecMovie"></canvas>
       </div>
-    </div>
-
-    <div class="chart-card" style="margin-bottom:1rem;max-width:50%">
-      <h3>Movies — Resolution × Codec</h3>
-      <canvas id="chartResCodecMovie"></canvas>
     </div>
   </div>
 
@@ -516,13 +511,6 @@ new Chart(document.getElementById('chartContentAge'), {
       y:{ stacked:true, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } }
     }
   }
-});
-
-// Resolution × Codec — TV
-new Chart(document.getElementById('chartResCodecTv'), {
-  type:'bar',
-  data:{ labels:{{ charts.resolution_codec_tv.labels | tojson }}, datasets:{{ charts.resolution_codec_tv.datasets | tojson }} },
-  options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#8892aa' } } }, scales:{ x:{ stacked:true, ticks:{ color:'#8892aa' }, grid:{ color:'#2e3855' } }, y:{ stacked:true, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } } } }
 });
 
 // Resolution × Codec — Movies

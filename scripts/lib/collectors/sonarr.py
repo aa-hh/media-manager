@@ -16,6 +16,30 @@ def _fetch_quality_profiles(url: str, api_key: str) -> dict[int, str]:
         return {}
 
 
+def fetch_episodefiles(url: str, api_key: str, series_ids: list[int]) -> list[dict]:
+    """Fetch episode files for all series, one request per series."""
+    if not series_ids:
+        return []
+    base = url.rstrip("/")
+    headers = {"X-Api-Key": api_key}
+    all_files = []
+    for sid in series_ids:
+        try:
+            resp = requests.get(
+                f"{base}/api/v3/episodefile",
+                headers=headers,
+                params={"seriesId": sid},
+                timeout=30,
+                verify=verify_ssl(),
+            )
+            resp.raise_for_status()
+            all_files.extend(resp.json())
+        except Exception as e:
+            log.warn(f"Sonarr: could not fetch episode files for series {sid}: {e}")
+    log.info(f"Sonarr: fetched {len(all_files)} episode files for {len(series_ids)} series")
+    return all_files
+
+
 def fetch(url: str, api_key: str) -> list[dict]:
     headers = {"X-Api-Key": api_key}
     quality_profiles = _fetch_quality_profiles(url, api_key)

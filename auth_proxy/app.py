@@ -172,6 +172,7 @@ async def _init_deletions_db() -> None:
 
 
 LEAVING_SOON_LABEL = "Leaving Soon"
+SEASON_LEAVING_LABEL = "Season Leaving"
 LEAVING_SOON_DAYS = 14
 
 
@@ -283,6 +284,28 @@ async def _plex_set_label(rating_key: str | None, label: str, add: bool) -> None
         print(f"Warning: could not {'add' if add else 'remove'} Plex label on {rating_key}: {e}")
 
 
+async def _get_plex_season_key(show_plex_key: str, season_number: int) -> str | None:
+    """Return the Plex ratingKey for a specific season, or None if not found."""
+    if not (PLEX_SERVER_URL and PLEX_TOKEN and show_plex_key):
+        return None
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=15) as client:
+            resp = await client.get(
+                f"{PLEX_SERVER_URL}/library/metadata/{show_plex_key}/children",
+                params={"X-Plex-Token": PLEX_TOKEN},
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code != 200:
+                return None
+            children = resp.json().get("MediaContainer", {}).get("Metadata", [])
+            for child in children:
+                if child.get("index") == season_number:
+                    return child.get("ratingKey")
+    except Exception as e:
+        print(f"Warning: could not fetch Plex season key for show {show_plex_key} S{season_number}: {e}")
+    return None
+
+
 async def _maybe_remove_label(plex_key: str | None) -> None:
     """Remove the Leaving Soon label only if no other pending row still references this Plex item."""
     if not plex_key:
@@ -294,6 +317,20 @@ async def _maybe_remove_label(plex_key: str | None) -> None:
         row = await cur.fetchone()
     if row and row[0] == 0:
         await _plex_set_label(plex_key, LEAVING_SOON_LABEL, add=False)
+
+
+async def _maybe_remove_season_leaving_label(item_id: str) -> None:
+    """Remove 'Season Leaving' from the show if no season deletions remain pending for it."""
+    async with aiosqlite.connect(PLAYS_DB) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM pending_deletions WHERE item_id = ? AND season_number IS NOT NULL AND status = 'pending'",
+            (item_id,),
+        )
+        row = await cur.fetchone()
+    if row and row[0] == 0:
+        item = _find_item(item_id)
+        if item:
+            await _plex_set_label(item.get("plex_key"), SEASON_LEAVING_LABEL, add=False)
 
 
 async def _cancel_pending_for(item_id: str, season_number: int | None) -> None:
@@ -314,6 +351,8 @@ async def _cancel_pending_for(item_id: str, season_number: int | None) -> None:
         await db.commit()
     for _, plex_key in rows:
         await _maybe_remove_label(plex_key)
+    if season_number is not None:
+        await _maybe_remove_season_leaving_label(item_id)
 
 
 async def _process_pending_deletions() -> None:
@@ -339,6 +378,8 @@ async def _process_pending_deletions() -> None:
             await db.execute("UPDATE pending_deletions SET status = 'done' WHERE id = ?", (row_id,))
             await db.commit()
         await _maybe_remove_label(plex_key)
+        if season_number is not None:
+            await _maybe_remove_season_leaving_label(item_id)
         any_done = True
 
     if any_done:
@@ -376,17 +417,24 @@ async def library_schedule_delete(request: Request):
     item_type = "season" if season_number is not None else item["type"]
     title = item["title"] if season_number is None else f"{item['title']} — Season {season_number}"
 
+    if season_number is not None:
+        plex_key = await _get_plex_season_key(item.get("plex_key"), season_number)
+    else:
+        plex_key = item.get("plex_key")
+
     async with aiosqlite.connect(PLAYS_DB) as db:
         await db.execute(
             "INSERT INTO pending_deletions "
             "(item_id, item_type, title, season_number, plex_key, scheduled_for, created_at, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
-            (item_id, item_type, title, season_number, item.get("plex_key"),
+            (item_id, item_type, title, season_number, plex_key,
              scheduled_for, datetime.now(timezone.utc).isoformat()),
         )
         await db.commit()
 
-    await _plex_set_label(item.get("plex_key"), LEAVING_SOON_LABEL, add=True)
+    await _plex_set_label(plex_key, LEAVING_SOON_LABEL, add=True)
+    if season_number is not None:
+        await _plex_set_label(item.get("plex_key"), SEASON_LEAVING_LABEL, add=True)
     return JSONResponse({"ok": True, "scheduled_for": scheduled_for})
 
 

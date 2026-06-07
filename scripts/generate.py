@@ -948,16 +948,29 @@ def _chart_data_tv_top_seasons(shows: list[dict], n: int = 20) -> dict:
     }
 
 
+def _infer_resolution(item: dict) -> str:
+    """Resolve resolution from file_info, falling back to quality_profile_name."""
+    fi = item.get("file_info") or {}
+    r = (fi.get("resolution") or "").lower().strip()
+    if r in ("4k", "2160p", "2160"):   return "4K"
+    if r in ("1080p", "1080"):         return "1080p"
+    if r in ("720p", "720"):           return "720p"
+    if r in ("480p", "480"):           return "480p"
+    # Fall back to quality profile name for items without file_info (e.g. TV shows)
+    profile = (item.get("quality_profile_name") or "").lower()
+    if "2160" in profile or "ultra" in profile or "4k" in profile:  return "4K"
+    if "1080" in profile:                                            return "1080p"
+    if "720" in profile:                                             return "720p"
+    if "480" in profile:                                             return "480p"
+    return "Other"
+
+
 def _chart_data_quality_by_type(items: list[dict]) -> dict:
-    def _norm_res(r):
-        r = (r or "").lower().strip()
-        if r in ("4k", "2160p", "2160"): return "4K"
-        if r in ("1080p", "1080"): return "1080p"
-        if r in ("720p", "720"): return "720p"
-        return "Other"
     buckets = {"4K": 0.0, "1080p": 0.0, "720p": 0.0, "Other": 0.0}
     for item in items:
-        res = _norm_res((item.get("file_info") or {}).get("resolution"))
+        res = _infer_resolution(item)
+        if res not in buckets:
+            res = "Other"
         buckets[res] += item.get("size_gb", 0)
     labels = ["4K", "1080p", "720p", "Other"]
     colors = ["#a78bfa", "#6366f1", "#60a5fa", "#64748b"]
@@ -1004,16 +1017,10 @@ def _chart_data_content_age(items: list[dict]) -> dict:
 
 def _chart_data_resolution_codec(items: list[dict]) -> dict:
     """Returns stacked bar data: resolution tiers × codec buckets."""
-    def _norm_res(r):
-        r = (r or "").lower().strip()
-        if r in ("4k", "2160p", "2160"): return "4K"
-        if r in ("1080p", "1080"): return "1080p"
-        if r in ("720p", "720"): return "720p"
-        return "Other"
     def _norm_codec(c):
         c = (c or "").lower()
-        if any(x in c for x in ("hevc", "h.265", "h265", "h265")): return "H.265"
-        if any(x in c for x in ("avc", "h.264", "h264", "h264")): return "H.264"
+        if any(x in c for x in ("hevc", "h.265", "h265")): return "H.265"
+        if any(x in c for x in ("avc", "h.264", "h264")):  return "H.264"
         return "Other"
     tiers = ["4K", "1080p", "720p", "Other"]
     codecs = ["H.265", "H.264", "Other"]
@@ -1021,7 +1028,9 @@ def _chart_data_resolution_codec(items: list[dict]) -> dict:
     buckets: dict[str, dict[str, float]] = {c: defaultdict(float) for c in codecs}
     for item in items:
         fi = item.get("file_info") or {}
-        res = _norm_res(fi.get("resolution"))
+        res = _infer_resolution(item)  # uses profile fallback for TV shows
+        if res not in tiers:
+            res = "Other"
         codec = _norm_codec(fi.get("video_codec"))
         buckets[codec][res] += item.get("size_gb", 0)
     codec_colors = {"H.265": "#52a0e0", "H.264": "#e0b252", "Other": "#64748b"}
@@ -1041,6 +1050,8 @@ def _chart_data_resolution_codec(items: list[dict]) -> dict:
 def _build_content_age_scatter(items: list[dict]) -> list:
     result = []
     for item in items:
+        if not item.get("size_gb"):
+            continue
         days = _days_since(item.get("added_at"))
         if days is None:
             continue

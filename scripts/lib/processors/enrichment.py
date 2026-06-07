@@ -3,6 +3,70 @@ Builds canonical MediaItem records by joining data from all collectors.
 """
 from slugify import slugify
 from datetime import datetime, timezone
+from collections import defaultdict
+
+
+def _norm_codec(c: str) -> str:
+    c = (c or "").lower()
+    if any(x in c for x in ("x265", "hevc", "h265", "h.265")): return "H.265"
+    if any(x in c for x in ("x264", "avc",  "h264", "h.264")): return "H.264"
+    if "av1"  in c: return "AV1"
+    if "vp9"  in c: return "VP9"
+    return c.upper() if c else ""
+
+
+def _norm_res(resolution) -> str:
+    r = str(resolution or "").lower().strip()
+    if r in ("4k", "2160", "2160p", "uhd"): return "4K"
+    if r in ("1080", "1080p"):              return "1080p"
+    if r in ("720",  "720p"):               return "720p"
+    if r in ("480",  "480p"):               return "480p"
+    # numeric from Sonarr quality.quality.resolution
+    try:
+        n = int(r)
+        if n >= 2160: return "4K"
+        if n >= 1080: return "1080p"
+        if n >= 720:  return "720p"
+        if n >= 480:  return "480p"
+    except ValueError:
+        pass
+    return ""
+
+
+def _dominant_file_info(episode_files: list[dict]) -> dict | None:
+    """
+    Pick the dominant codec/resolution for a group of episode files.
+    Strategy: weight each file's codec+resolution by its size; largest total wins.
+    """
+    if not episode_files:
+        return None
+
+    # Accumulate size per (codec, resolution) pair
+    buckets: dict[tuple, float] = defaultdict(float)
+    hdr_size = 0.0
+    total_size = 0.0
+
+    for f in episode_files:
+        size = f.get("size", 0) or 0
+        mi   = f.get("mediaInfo") or {}
+        q    = ((f.get("quality") or {}).get("quality") or {})
+
+        codec = _norm_codec(mi.get("videoCodec", ""))
+        res   = _norm_res(q.get("resolution") or mi.get("videoResolution", ""))
+        buckets[(codec, res)] += size
+        if mi.get("videoDynamicRangeType"):
+            hdr_size += size
+        total_size += size
+
+    if not buckets:
+        return None
+
+    best_codec, best_res = max(buckets, key=lambda k: buckets[k])
+    return {
+        "video_codec": best_codec,
+        "resolution":  best_res,
+        "hdr":         hdr_size > (total_size * 0.5),  # majority HDR
+    }
 
 
 def _gb(size_bytes: int) -> float:
@@ -48,7 +112,18 @@ def build_shows(
     transcode_stats: dict | None = None,
     watchlist: dict[int, set[int]] | None = None,
     plex_keys: dict[int, str] | None = None,
+    episodefiles: list[dict] | None = None,
 ) -> list[dict]:
+    # Index episode files by (sonarr_id, season_number) for O(1) lookup
+    ef_by_show: dict[int, list] = defaultdict(list)
+    ef_by_season: dict[tuple, list] = defaultdict(list)
+    for f in (episodefiles or []):
+        sid = f.get("seriesId")
+        sn  = f.get("seasonNumber")
+        if sid is not None:
+            ef_by_show[sid].append(f)
+        if sid is not None and sn is not None:
+            ef_by_season[(sid, sn)].append(f)
     # Index overseerr requests by tmdb_id (most recent wins per item)
     req_by_tmdb: dict[int, dict] = {}
     for r in overseerr_requests:
@@ -109,6 +184,8 @@ def build_shows(
             any_season_watched = any(
                 w.get("completion_pct", 0) >= 25 for w in s_watch_out.values()
             )
+            sonarr_id = item["sonarr_id"]
+            season_fi = _dominant_file_info(ef_by_season.get((sonarr_id, snum), []))
             seasons.append({
                 "season_number": snum,
                 "monitored": s.get("monitored", True),
@@ -119,6 +196,7 @@ def build_shows(
                 "watch_data": s_watch_out,
                 "any_watched": any_season_watched,
                 "total_plays": sum(w["plays"] for w in s_watch_out.values()),
+                "file_info": season_fi,
             })
 
         shows.append({
@@ -144,6 +222,7 @@ def build_shows(
             "total_episodes": item.get("total_episodes", 0),
             "quality_profile_id":   item.get("quality_profile_id"),
             "quality_profile_name": item.get("quality_profile_name", ""),
+            "file_info": _dominant_file_info(ef_by_show.get(item["sonarr_id"], [])),
             "seasons": seasons,
             "added_at": item.get("added_at"),
             "request": {

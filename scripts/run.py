@@ -134,17 +134,22 @@ def fetch_sonarr(_build: bool = True) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     c = _cfg()
     items: list = []
+    episodefiles: list = []
     if not c["sonarr_urls"]:
         log.info("Sonarr not configured — skipping")
     else:
         for i, url in enumerate(c["sonarr_urls"]):
             key = c["sonarr_keys"][i] if i < len(c["sonarr_keys"]) else (c["sonarr_keys"][0] if c["sonarr_keys"] else "")
             try:
-                items.extend(sonarr.fetch(url, key))
+                fetched = sonarr.fetch(url, key)
+                items.extend(fetched)
+                series_ids = [s["sonarr_id"] for s in fetched if s.get("sonarr_id")]
+                episodefiles.extend(sonarr.fetch_episodefiles(url, key, series_ids))
             except Exception as e:
                 log.warn(f"Sonarr instance {url} unavailable: {e}")
     (DATA_DIR / "raw_sonarr.json").write_text(json.dumps(items, indent=2))
-    log.info(f"Sonarr: {len(items)} items saved")
+    (DATA_DIR / "raw_sonarr_episodefiles.json").write_text(json.dumps(episodefiles, indent=2))
+    log.info(f"Sonarr: {len(items)} series, {len(episodefiles)} episode files saved")
     _record_run("sonarr")
     log.info("=== Sonarr fetch complete ===")
     if _build:
@@ -375,6 +380,7 @@ def build() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     sonarr_items = _load_raw("sonarr", [])
+    sonarr_episodefiles = _load_raw("sonarr_episodefiles", [])
     radarr_items = _load_raw("radarr", [])
     ov_data = _load_raw("overseerr", {"requests": [], "users": {}, "watchlist": []})
     plex_data = _load_raw("plex", {"tv": {}, "movie": {}, "users": [], "machine_id": "", "tv_seasons": {},
@@ -439,6 +445,7 @@ def build() -> None:
         transcode_stats=transcode_tv,
         watchlist=watchlist_tv,
         plex_keys=plex_keys_tv,
+        episodefiles=sonarr_episodefiles,
     )
     movies = enrichment.build_movies(
         radarr_items, movie_tmdb, ov_requests, watch_data["movie"],
