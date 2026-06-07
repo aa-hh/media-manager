@@ -863,16 +863,26 @@ function renderIntegrations() {
 const svcState = { sonarr: [], radarr: [], cfg: {} };
 
 const SVC_DEFS = [
-  { id: 'sonarr',   label: 'Sonarr',          desc: 'TV library',                    icon: '../assets/icons/sonarr.svg',  multi: true,  hasUrl: true },
-  { id: 'radarr',   label: 'Radarr',          desc: 'Movie library',                 icon: '../assets/icons/radarr.svg',  multi: true,  hasUrl: true },
-  { id: 'plex',     label: 'Plex',            desc: 'Watch history & user data',     icon: '../assets/icons/plex.svg',    multi: false, hasUrl: true  },
-  { id: 'tmdb',     label: 'TMDB',            desc: 'Posters, ratings & overviews',  icon: '../assets/icons/tmdb.svg',    multi: false, hasUrl: false },
-  { id: 'seerr',    label: 'Seerr',       desc: 'Requests & watchlists',         icon: '../assets/icons/seerr.svg',   multi: false, hasUrl: true  },
-  { id: 'tautulli', label: 'Tautulli',        desc: 'Enhanced watch stats',          icon: null,                          multi: false, hasUrl: true  },
+  { id: 'sonarr',            label: 'Sonarr',      desc: 'TV library',                    icon: '../assets/icons/sonarr.svg',  multi: true,  hasUrl: true },
+  { id: 'radarr',            label: 'Radarr',      desc: 'Movie library',                 icon: '../assets/icons/radarr.svg',  multi: true,  hasUrl: true },
+  { id: 'plex',              label: 'Plex',         desc: 'Watch history & user data',     icon: '../assets/icons/plex.svg',    multi: false, hasUrl: true  },
+  { id: 'tmdb',              label: 'TMDB',         desc: 'Posters, ratings & overviews',  icon: '../assets/icons/tmdb.svg',    multi: false, hasUrl: false },
+  { id: 'seerr',             label: 'Seerr',        desc: 'Requests & watchlists',         icon: '../assets/icons/seerr.svg',   multi: false, hasUrl: true  },
+  { id: 'tautulli',          label: 'Tautulli',     desc: 'Enhanced watch stats',          icon: null,                          multi: false, hasUrl: true  },
+  { id: 'rutorrent',         label: 'ruTorrent',    desc: 'Torrent seeding client',        icon: null,                          multi: false, hasUrl: true  },
+  { id: 'tracker-blutopia',  label: 'Blutopia',     desc: 'Tracker account · UNIT3D',      icon: null,                          multi: false, hasUrl: true  },
+  { id: 'tracker-beyondhd',  label: 'Beyond-HD',    desc: 'Tracker account · UNIT3D',      icon: null,                          multi: false, hasUrl: true  },
+  { id: 'tracker-privatehd', label: 'PrivateHD',    desc: 'Tracker account · AvistaZ',     icon: null,                          multi: false, hasUrl: true  },
 ];
 
 function tautulliIcon() {
   return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`;
+}
+function rutorrentIcon() {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 14h5"/></svg>`;
+}
+function trackerIcon() {
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
 }
 
 function cardStatusDot(svcId) {
@@ -884,6 +894,10 @@ function cardStatusDot(svcId) {
   else if (svcId === 'plex') configured = !!(cfg.PLEX_URL);
   else if (svcId === 'seerr') configured = !!(cfg.SEERR_URL);
   else if (svcId === 'tautulli') configured = !!(cfg.TAUTULLI_URL);
+  else if (svcId === 'rutorrent') configured = !!(cfg.RUTORRENT_URL);
+  else if (svcId === 'tracker-blutopia') configured = !!(cfg.TRACKER_BLUTOPIA_USERNAME);
+  else if (svcId === 'tracker-beyondhd') configured = !!(cfg.TRACKER_BEYONDHD_USERNAME);
+  else if (svcId === 'tracker-privatehd') configured = !!(cfg.TRACKER_PRIVATEHD_USERNAME);
   return configured
     ? `<span class="status-dot status-dot--ok"></span><span style="color:var(--green)">Configured</span>`
     : `<span class="status-dot status-dot--off"></span><span style="color:var(--text-muted)">Not configured</span>`;
@@ -897,6 +911,10 @@ function cardUrl(svcId) {
   if (svcId === 'plex') return cfg.PLEX_URL || '';
   if (svcId === 'seerr') return cfg.SEERR_URL || '';
   if (svcId === 'tautulli') return cfg.TAUTULLI_URL || '';
+  if (svcId === 'rutorrent') return cfg.RUTORRENT_URL || '';
+  if (svcId === 'tracker-blutopia') return cfg.TRACKER_BLUTOPIA_USERNAME ? `blutopia.cc · ${cfg.TRACKER_BLUTOPIA_USERNAME}` : '';
+  if (svcId === 'tracker-beyondhd') return cfg.TRACKER_BEYONDHD_USERNAME ? `beyond-hd.me · ${cfg.TRACKER_BEYONDHD_USERNAME}` : '';
+  if (svcId === 'tracker-privatehd') return cfg.TRACKER_PRIVATEHD_USERNAME ? `privatehd.to · ${cfg.TRACKER_PRIVATEHD_USERNAME}` : '';
   return '';
 }
 
@@ -912,7 +930,7 @@ function renderServiceCards() {
     card.innerHTML = `
       <div class="svc-card__summary" onclick="toggleCard('${def.id}')">
         <div class="svc-card__icon">
-          ${def.icon ? `<img src="${def.icon}" alt="${def.label}">` : tautulliIcon()}
+          ${def.icon ? `<img src="${def.icon}" alt="${def.label}">` : def.id === 'rutorrent' ? rutorrentIcon() : def.id.startsWith('tracker-') ? trackerIcon() : tautulliIcon()}
         </div>
         <div class="svc-card__info">
           <div class="svc-card__name">${def.label}</div>
@@ -1036,6 +1054,96 @@ function buildFormHTML(def) {
         <span class="test-result" id="tautulli-result"></span>
       </div>`;
   }
+
+  if (def.id === 'rutorrent') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="rutorrent-url" placeholder="http://localhost/rutorrent" value="${esc(cfg.RUTORRENT_URL || '')}">
+        </div>
+      </div>
+      <div class="svc-form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="rutorrent-username" placeholder="Username (optional)" autocomplete="off" value="${esc(cfg.RUTORRENT_USERNAME || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-input" id="rutorrent-password" placeholder="Password (optional)" autocomplete="off" value="${esc(cfg.RUTORRENT_PASSWORD || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testRutorrent()">Test connection</button>
+        <span class="test-result" id="rutorrent-result"></span>
+      </div>`;
+  }
+
+  if (def.id === 'tracker-blutopia') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="tracker-blutopia-url" placeholder="https://blutopia.cc" value="${esc(cfg.TRACKER_BLUTOPIA_URL || '')}">
+        </div>
+      </div>
+      <div class="svc-form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="tracker-blutopia-username" placeholder="Your username" autocomplete="off" value="${esc(cfg.TRACKER_BLUTOPIA_USERNAME || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="tracker-blutopia-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TRACKER_BLUTOPIA_API_KEY || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testTrackerAccount('blutopia', 'tracker-blutopia-url', 'tracker-blutopia-username', 'tracker-blutopia-key', 'tracker-blutopia-result')">Test connection</button>
+        <span class="test-result" id="tracker-blutopia-result"></span>
+      </div>`;
+  }
+
+  if (def.id === 'tracker-beyondhd') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="tracker-beyondhd-url" placeholder="https://beyond-hd.me" value="${esc(cfg.TRACKER_BEYONDHD_URL || '')}">
+        </div>
+      </div>
+      <div class="svc-form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="tracker-beyondhd-username" placeholder="Your username" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_USERNAME || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="tracker-beyondhd-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_API_KEY || '')}">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn--test" onclick="testTrackerAccount('beyondhd', 'tracker-beyondhd-url', 'tracker-beyondhd-username', 'tracker-beyondhd-key', 'tracker-beyondhd-result')">Test connection</button>
+        <span class="test-result" id="tracker-beyondhd-result"></span>
+      </div>`;
+  }
+
+  if (def.id === 'tracker-privatehd') {
+    return `<div class="svc-form-row">
+        <div class="form-group form-group--url">
+          <label class="form-label">URL</label>
+          <input type="text" class="form-input" id="tracker-privatehd-url" placeholder="https://privatehd.to" value="${esc(cfg.TRACKER_PRIVATEHD_URL || '')}">
+        </div>
+      </div>
+      <div class="svc-form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="tracker-privatehd-username" placeholder="Your username" autocomplete="off" value="${esc(cfg.TRACKER_PRIVATEHD_USERNAME || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="tracker-privatehd-key" placeholder="API key (not yet supported)" autocomplete="off" value="${esc(cfg.TRACKER_PRIVATEHD_API_KEY || '')}">
+        </div>
+      </div>
+      <p style="font-size:.78rem;color:var(--text-muted);margin-top:8px">PrivateHD (AvistaZ) does not provide a public REST API — credentials are saved for future use but live account stats are not fetched automatically.</p>`;
+  }
+
   return '';
 }
 
@@ -1068,6 +1176,42 @@ function syncInstancesToState(svcId) {
     if (u) arr[i].url = u.value.trim();
     if (k) arr[i].key = k.value.trim();
   });
+}
+
+async function testRutorrent() {
+  const url = document.getElementById('rutorrent-url')?.value.trim() || '';
+  const user = document.getElementById('rutorrent-username')?.value.trim() || '';
+  const pass = document.getElementById('rutorrent-password')?.value.trim() || '';
+  const key = user && pass ? `${user}:${pass}` : '';
+  await testSvc('rutorrent', url, null, key, 'rutorrent-result');
+}
+
+async function testTrackerAccount(slug, urlId, usernameId, keyId, resultId) {
+  const url = document.getElementById(urlId)?.value.trim() || '';
+  const username = document.getElementById(usernameId)?.value.trim() || '';
+  const key = document.getElementById(keyId)?.value.trim() || '';
+  const el = document.getElementById(resultId);
+  if (!el) return;
+  el.className = 'test-result test-result--checking';
+  el.innerHTML = '<span class="spinner"></span>checking…';
+  try {
+    const r = await fetch('/api/setup/test-service', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: `tracker-${slug}`, url, key, username }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      el.className = 'test-result test-result--ok';
+      el.textContent = (data.version || '✓') + ' ✓';
+    } else {
+      el.className = 'test-result test-result--err';
+      el.textContent = data.error || 'Failed';
+    }
+  } catch {
+    el.className = 'test-result test-result--err';
+    el.textContent = 'Request failed';
+  }
 }
 
 async function testArr(svcId, idx) {
@@ -1212,10 +1356,22 @@ async function saveServices() {
     PLEX_MOVIE_SECTIONS: document.getElementById('lib-movie')?.value || '',
     SEERR_URL:           document.getElementById('seerr-url')?.value.trim() || '',
     SEERR_API_KEY:       document.getElementById('seerr-key')?.value.trim() || '',
-    TAUTULLI_URL:        document.getElementById('tautulli-url')?.value.trim() || '',
-    TAUTULLI_API_KEY:    document.getElementById('tautulli-key')?.value.trim() || '',
-    STORAGE_CAPACITY_GB: document.getElementById('storage-gb').value.trim(),
-    VERIFY_SSL:          document.getElementById('verify-ssl').checked ? 'true' : 'false',
+    TAUTULLI_URL:               document.getElementById('tautulli-url')?.value.trim() || '',
+    TAUTULLI_API_KEY:           document.getElementById('tautulli-key')?.value.trim() || '',
+    RUTORRENT_URL:              document.getElementById('rutorrent-url')?.value.trim() || '',
+    RUTORRENT_USERNAME:         document.getElementById('rutorrent-username')?.value.trim() || '',
+    RUTORRENT_PASSWORD:         document.getElementById('rutorrent-password')?.value.trim() || '',
+    TRACKER_BLUTOPIA_URL:       document.getElementById('tracker-blutopia-url')?.value.trim() || '',
+    TRACKER_BLUTOPIA_USERNAME:  document.getElementById('tracker-blutopia-username')?.value.trim() || '',
+    TRACKER_BLUTOPIA_API_KEY:   document.getElementById('tracker-blutopia-key')?.value.trim() || '',
+    TRACKER_BEYONDHD_URL:       document.getElementById('tracker-beyondhd-url')?.value.trim() || '',
+    TRACKER_BEYONDHD_USERNAME:  document.getElementById('tracker-beyondhd-username')?.value.trim() || '',
+    TRACKER_BEYONDHD_API_KEY:   document.getElementById('tracker-beyondhd-key')?.value.trim() || '',
+    TRACKER_PRIVATEHD_URL:      document.getElementById('tracker-privatehd-url')?.value.trim() || '',
+    TRACKER_PRIVATEHD_USERNAME: document.getElementById('tracker-privatehd-username')?.value.trim() || '',
+    TRACKER_PRIVATEHD_API_KEY:  document.getElementById('tracker-privatehd-key')?.value.trim() || '',
+    STORAGE_CAPACITY_GB:        document.getElementById('storage-gb').value.trim(),
+    VERIFY_SSL:                 document.getElementById('verify-ssl').checked ? 'true' : 'false',
   };
 
   Object.keys(body).forEach(k => { if (!body[k]) delete body[k]; });

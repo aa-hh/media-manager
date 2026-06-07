@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set active = "torrents" %}
+{% set root = "../" %}
+{% set assets_root = "../" %}
+
+{% block title %}Torrents — Media Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Torrents</h1>
+  <p>Active seeding status for library items</p>
+</div>
+
+<div class="content">
+
+  {# ── Tracker Account Cards ── #}
+  {% if tracker_accounts %}
+  <div class="section">
+    <div class="section-title">Tracker Accounts</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">
+      {% for tracker_key, acct in tracker_accounts.items() %}
+      <div class="table-card" style="overflow:hidden">
+        {# Card header #}
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+          <div style="width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ tracker_key }}</div>
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:1px">{{ acct.username or "—" }}</div>
+          </div>
+          {% if acct.error %}
+          <span class="badge warning" style="font-size:.7rem;padding:2px 7px;white-space:nowrap">Error</span>
+          {% elif acct.global_ratio_ok == false %}
+          <span class="badge danger" style="font-size:.7rem;padding:2px 7px;white-space:nowrap">Ratio Low</span>
+          {% elif acct.global_ratio_ok == true %}
+          <span class="badge safe" style="font-size:.7rem;padding:2px 7px;white-space:nowrap">OK</span>
+          {% else %}
+          <span style="font-size:.7rem;color:var(--text-muted)">Connected</span>
+          {% endif %}
+        </div>
+        {# Card body #}
+        {% if acct.error %}
+        <div style="padding:12px 18px;font-size:.8rem;color:var(--red);line-height:1.4">{{ acct.error }}</div>
+        {% else %}
+        <div style="padding:12px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px">
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Ratio</div>
+            <div style="font-weight:600;font-size:.9rem;{% if acct.global_ratio_ok == false %}color:var(--red){% elif acct.global_ratio_ok == true %}color:var(--green){% endif %}">
+              {% if acct.ratio is not none %}{{ "%.3f"|format(acct.ratio) }}{% else %}—{% endif %}
+              {% if acct.min_global_ratio is not none %}
+              <span style="font-size:.7rem;color:var(--text-muted);font-weight:400">/ {{ acct.min_global_ratio }} min</span>
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Linked</div>
+            <div style="font-weight:600;font-size:.9rem">{{ acct.linked_count }}</div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Uploaded</div>
+            <div style="font-size:.88rem">{% if acct.upload_gb is not none %}{{ acct.upload_gb | smart_size }}{% else %}—{% endif %}</div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Downloaded</div>
+            <div style="font-size:.88rem">{% if acct.download_gb is not none %}{{ acct.download_gb | smart_size }}{% else %}—{% endif %}</div>
+          </div>
+          {% if acct.seeding is not none %}
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Seeding</div>
+            <div style="font-size:.88rem">{{ acct.seeding }}</div>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Mini-dashboard ── #}
+  <div class="section">
+    <div class="section-title">Seeding Overview</div>
+    <div class="stat-grid">
+
+      <div class="stat-card">
+        <div class="label">Seeding</div>
+        <div class="value" style="color:var(--green)">{{ stats.seeding }}</div>
+        <div class="sub">active torrents</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="label">Stopped</div>
+        <div class="value" {% if stats.stopped > 0 %}style="color:var(--red)"{% endif %}>{{ stats.stopped }}</div>
+        <div class="sub">not seeding</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="label">Total Uploaded</div>
+        <div class="value">{{ stats.total_up_gb | smart_size }}</div>
+        <div class="sub">across {{ stats.total }} items</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="label">Avg Age</div>
+        {% if stats.avg_age_days is not none %}
+        <div class="value">{{ stats.avg_age_days }}</div>
+        <div class="sub">days seeding</div>
+        {% else %}
+        <div class="value">—</div>
+        <div class="sub">no data</div>
+        {% endif %}
+      </div>
+
+      {% if stats.has_req_data %}
+      <div class="stat-card">
+        <div class="label">Req. Met</div>
+        <div class="value" style="color:var(--green)">{{ stats.req_met }}</div>
+        <div class="sub">of {{ stats.req_met + stats.req_unmet }} tracked</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="label">Req. Unmet</div>
+        <div class="value" {% if stats.req_unmet > 0 %}style="color:var(--red)"{% endif %}>{{ stats.req_unmet }}</div>
+        <div class="sub">need attention</div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  {# ── Tracker breakdown ── #}
+  {% if stats.tracker_breakdown %}
+  <div class="section" style="margin-top:24px">
+    <div class="section-title">Tracker Split</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;padding:4px 0">
+      {% for tracker, count in stats.tracker_breakdown %}
+      <div style="background:var(--bg2);border:1px solid var(--bg3);border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:.88rem;color:var(--text-muted)">{{ tracker }}</span>
+        <span style="font-weight:600;font-size:.95rem">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Torrent table ── #}
+  <div class="section" style="margin-top:24px">
+    <div class="section-title">All Matched Torrents</div>
+
+    {% if torrent_items %}
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Ratio</th>
+            <th>Age</th>
+            <th>Uploaded</th>
+            <th>Tracker</th>
+            {% if stats.has_req_data %}<th>Req.</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in torrent_items %}
+          {% set t = row.torrent %}
+          {% set tb = torrent_status_badge(t) %}
+          {% set trb = torrent_req_badge(t) %}
+          <tr>
+            <td>
+              {% if row.slug %}
+                {% if row.type == 'show' %}
+                  <a href="{{ root }}tv/{{ row.slug }}/" style="color:var(--text)">{{ row.title }}</a>
+                {% else %}
+                  <a href="{{ root }}movies/{{ row.slug }}/" style="color:var(--text)">{{ row.title }}</a>
+                {% endif %}
+              {% else %}
+                {{ row.title }}
+              {% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:.85rem">
+              {% if row.type == 'show' %}TV{% else %}Movie{% endif %}
+            </td>
+            <td>
+              {% if tb %}<span class="badge {{ tb[0] }}" style="font-size:.78rem;padding:2px 8px">{{ tb[1] }}</span>{% endif %}
+            </td>
+            <td>{{ "%.3f" | format(t.ratio) }}</td>
+            <td style="color:var(--text-muted)">
+              {% if t.age_days is not none %}{{ t.age_days }}d{% else %}—{% endif %}
+            </td>
+            <td style="color:var(--text-muted)">
+              {% if t.up_gb %}{{ t.up_gb | gb }}{% else %}—{% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:.82rem">{{ t.tracker or "—" }}</td>
+            {% if stats.has_req_data %}
+            <td>
+              {% if trb %}<span class="badge {{ trb[0] }}" style="font-size:.78rem;padding:2px 8px">{{ trb[1] }}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% else %}
+    <div class="table-card">
+      <div style="padding:40px 20px;text-align:center;color:var(--text-muted)">
+        <p style="font-size:1rem;margin-bottom:8px">No torrent data available.</p>
+        <p style="font-size:.85rem">Configure ruTorrent in <a href="/settings" style="color:var(--accent)">Settings → Services</a> and run a full collect.</p>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+</div>
+{% endblock %}

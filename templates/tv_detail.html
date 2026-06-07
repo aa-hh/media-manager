@@ -259,6 +259,56 @@
         </div>
       </div>
 
+      {% if item.torrent %}
+      {% set tb = torrent_status_badge(item.torrent) %}
+      {% set trb = torrent_req_badge(item.torrent) %}
+      <div class="table-card" style="margin-bottom:20px">
+        <div class="table-card-title">Torrent</div>
+        <div style="padding:14px 20px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            {% if tb %}<span class="badge {{ tb[0] }}" style="font-size:.82rem;padding:3px 10px">{{ tb[1] }}</span>{% endif %}
+            {% if trb %}<span class="badge {{ trb[0] }}" style="font-size:.82rem;padding:3px 10px">{{ trb[1] }}</span>{% endif %}
+          </div>
+          <table class="data-table">
+            <tbody>
+              <tr><td style="color:var(--text-muted)">Ratio</td><td>{{ "%.3f" | format(item.torrent.ratio) }}</td></tr>
+              {% if item.torrent.age_days is not none %}
+              <tr><td style="color:var(--text-muted)">Age</td><td>{{ item.torrent.age_days }} days</td></tr>
+              {% endif %}
+              {% if item.torrent.up_gb %}
+              <tr><td style="color:var(--text-muted)">Uploaded</td><td>{{ item.torrent.up_gb | gb }}</td></tr>
+              {% endif %}
+              {% if item.torrent.tracker %}
+              <tr><td style="color:var(--text-muted)">Tracker</td><td style="word-break:break-all;font-size:.82rem">{{ item.torrent.tracker }}</td></tr>
+              {% endif %}
+              {% if item.torrent.requirements %}
+              {% set req = item.torrent.requirements %}
+              {% set or_logic = req.logic == 'or' %}
+              {% if req.min_hours is not none %}
+              <tr><td style="color:var(--text-muted)">Seed req.</td>
+                <td {% if req.hours_ok == false and not or_logic %}style="color:var(--red)"{% elif req.hours_ok == true %}style="color:var(--green)"{% endif %}>
+                  {{ req.min_hours | fmt_hours }}{% if or_logic %} <span style="color:var(--text-muted);font-size:.75rem">OR ratio</span>{% endif %}
+                  {% if req.hours_ok == true %} ✓{% elif req.hours_ok == false %} ✗{% endif %}
+                </td></tr>
+              {% endif %}
+              {% if req.min_ratio is not none %}
+              <tr><td style="color:var(--text-muted)">Ratio req.</td>
+                <td {% if req.ratio_ok == false and not or_logic %}style="color:var(--red)"{% elif req.ratio_ok == true %}style="color:var(--green)"{% endif %}>
+                  {{ req.min_ratio }}{% if or_logic %} <span style="color:var(--text-muted);font-size:.75rem">OR time</span>{% endif %}
+                  {% if req.ratio_ok == true %} ✓{% elif req.ratio_ok == false %} ✗{% endif %}
+                </td></tr>
+              {% endif %}
+              {% if req.hnr_buffer_hours is not none %}
+              <tr><td style="color:var(--text-muted)">Grace buf.</td>
+                <td style="color:var(--text-muted);font-size:.82rem">{{ req.hnr_buffer_hours | fmt_hours }} before H&amp;R logged</td></tr>
+              {% endif %}
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
       {# Quick Stats #}
       <div class="table-card">
         <div class="table-card-title">Details</div>

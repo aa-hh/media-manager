@@ -178,9 +178,40 @@ def _make_env(templates_dir: Path) -> Environment:
             return f"{val/1000:.2f} TB"
         return f"{val:.1f} GB"
 
+    def fmt_hours(val):
+        if val is None:
+            return "—"
+        h = float(val)
+        if h >= 24:
+            days = h / 24
+            return f"{days:.1f}d"
+        return f"{h:.0f}h"
+
+    def torrent_status_badge(torrent: dict | None):
+        """Returns (css_class, label) for torrent seeding status, or None."""
+        if not torrent:
+            return None
+        mapping = {
+            "seeding":     ("safe",    "Seeding"),
+            "stopped":     ("danger",  "Stopped"),
+            "downloading": ("warning", "Downloading"),
+            "unknown":     ("",        "Unknown"),
+        }
+        return mapping.get(torrent.get("status", "unknown"), ("", "Unknown"))
+
+    def torrent_req_badge(torrent: dict | None):
+        """Returns (css_class, label) for tracker requirement status, or None if no rules configured."""
+        if not torrent:
+            return None
+        met = torrent.get("requirements_met")
+        if met is None:
+            return None
+        return ("safe", "Req. Met") if met else ("danger", "Req. Unmet")
+
     env.filters["gb"] = gb
     env.filters["smart_size"] = smart_size
     env.filters["fmt_date"] = fmt_date
+    env.filters["fmt_hours"] = fmt_hours
     env.filters["pct"] = pct
     env.globals["requester_label"] = requester_label
     env.globals["requester_status_label"] = requester_status_label
@@ -190,6 +221,8 @@ def _make_env(templates_dir: Path) -> Environment:
     env.globals["top_genres"] = top_genres
     env.globals["file_format_tags"] = file_format_tags
     env.globals["transcode_label"] = transcode_label
+    env.globals["torrent_status_badge"] = torrent_status_badge
+    env.globals["torrent_req_badge"] = torrent_req_badge
     _now = datetime.now()
     env.globals["now"] = _now.strftime("%Y-%m-%d %H:%M")
     env.globals["now_ts"] = int(_now.timestamp())
@@ -1337,6 +1370,60 @@ def render_api(
     }, indent=2))
 
 
+def _build_torrents_context(shows: list[dict], movies: list[dict], tracker_accounts: dict | None = None) -> dict:
+    from collections import defaultdict
+
+    items = []
+    for item in shows + movies:
+        t = item.get("torrent")
+        if not t:
+            continue
+        items.append({
+            "title":   item["title"],
+            "slug":    item.get("slug", ""),
+            "type":    item.get("type", ""),
+            "torrent": t,
+        })
+
+    items.sort(key=lambda x: (
+        {"seeding": 0, "stopped": 1, "downloading": 2, "unknown": 3}.get(x["torrent"]["status"], 9),
+        -(x["torrent"].get("age_days") or 0),
+    ))
+
+    total        = len(items)
+    seeding      = sum(1 for x in items if x["torrent"]["status"] == "seeding")
+    stopped      = sum(1 for x in items if x["torrent"]["status"] == "stopped")
+    total_up_gb  = round(sum(x["torrent"].get("up_gb", 0) for x in items), 2)
+    age_vals     = [x["torrent"]["age_days"] for x in items if x["torrent"].get("age_days") is not None]
+    avg_age_days = round(sum(age_vals) / len(age_vals)) if age_vals else None
+
+    tracker_counts: dict = defaultdict(int)
+    for x in items:
+        t = x["torrent"].get("tracker") or "Unknown"
+        tracker_counts[t] += 1
+    tracker_breakdown = sorted(tracker_counts.items(), key=lambda kv: -kv[1])
+
+    req_items = [x for x in items if x["torrent"].get("requirements_met") is not None]
+    req_met   = sum(1 for x in req_items if x["torrent"]["requirements_met"])
+    req_unmet = len(req_items) - req_met
+
+    return {
+        "torrent_items":    items,
+        "tracker_accounts": tracker_accounts or {},
+        "stats": {
+            "total":             total,
+            "seeding":           seeding,
+            "stopped":           stopped,
+            "total_up_gb":       total_up_gb,
+            "avg_age_days":      avg_age_days,
+            "tracker_breakdown": tracker_breakdown,
+            "req_met":           req_met,
+            "req_unmet":         req_unmet,
+            "has_req_data":      bool(req_items),
+        },
+    }
+
+
 def render_all(
     shows: list[dict],
     movies: list[dict],
@@ -1460,6 +1547,17 @@ def render_all(
     _render(env, "services.html", services_dir / "index.html", {
         "services": services or {},
     })
+
+    # Torrents page
+    tracker_accounts_file = public_dir.parent / "data" / "tracker_accounts.json"
+    try:
+        tracker_accounts_data = json.loads(tracker_accounts_file.read_text())
+    except Exception:
+        tracker_accounts_data = {}
+    torrents_dir = public_dir / "torrents"
+    torrents_dir.mkdir(exist_ok=True)
+    _render(env, "torrents.html", torrents_dir / "index.html",
+            _build_torrents_context(shows, movies, tracker_accounts_data))
 
     # API endpoints for homepage widgets
     requests_file = public_dir.parent / "data" / "requests.json"

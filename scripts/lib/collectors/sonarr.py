@@ -40,6 +40,37 @@ def fetch_episodefiles(url: str, api_key: str, series_ids: list[int]) -> list[di
     return all_files
 
 
+def fetch_history(url: str, api_key: str) -> list[dict]:
+    """Fetch 'Grabbed' history events — returns [{download_id, sonarr_id}] for torrent matching."""
+    base    = url.rstrip("/")
+    headers = {"X-Api-Key": api_key}
+    items: list[dict] = []
+    page, page_size = 1, 1000
+    try:
+        while True:
+            resp = requests.get(
+                f"{base}/api/v3/history",
+                headers=headers,
+                params={"eventType": 1, "pageSize": page_size, "page": page},
+                timeout=30, verify=verify_ssl(),
+            )
+            resp.raise_for_status()
+            data    = resp.json()
+            records = data.get("records", [])
+            for r in records:
+                dl_id     = (r.get("downloadId") or "").strip()
+                series_id = r.get("seriesId")
+                if dl_id and series_id:
+                    items.append({"download_id": dl_id.upper(), "sonarr_id": series_id})
+            if len(records) < page_size:
+                break
+            page += 1
+    except Exception as e:
+        log.warn(f"Sonarr history: {e}")
+    log.info(f"Sonarr: {len(items)} history records")
+    return items
+
+
 def fetch(url: str, api_key: str) -> list[dict]:
     headers = {"X-Api-Key": api_key}
     quality_profiles = _fetch_quality_profiles(url, api_key)

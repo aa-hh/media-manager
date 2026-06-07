@@ -1,0 +1,26 @@
+{
+  "_comment": "Per-tracker H&R rules. Key = hostname substring-matched against announce URL. logic: 'and' = all conditions must pass, 'or' = either condition clears H&R.",
+
+  "privatehd.to": {
+    "_comment": "OR logic: size-based seed time OR ratio 0.9 clears H&R. Formula: <=1GB flat 72h, 1-50GB: 72+2x hours, >=50GB: 100*ln(x)-219.2023 hours. Grace buffer: 1 day + 1h per 5GB before site officially logs H&R. Freeleech torrents are NOT exempt — all must be seeded. Global ratio: maintain 1.0 or better.",
+    "min_hours_formula": "privatehd",
+    "min_ratio": 0.9,
+    "min_global_ratio": 1.0,
+    "logic": "or"
+  },
+
+  "blutopia.cc": {
+    "_comment": "AND logic: 168 hours (7 days) seed time required. Seed time only begins after 100% download complete. Disconnected >24h without meeting requirement triggers pre-warning PM; >72h disconnected triggers H&R warning. Account-level ratio 0.4 required for download rights (not a per-torrent H&R condition). Global ratio: maintain 0.4 or better.",
+    "min_hours": 168,
+    "min_global_ratio": 0.4,
+    "logic": "and"
+  },
+
+  "beyond-hd.me": {
+    "_comment": "OR logic: 120 hours (5 days) OR ratio 1.0 clears H&R. Seed time only begins after 100% download. 48h continuous offline triggers pre-warning; failure to seed within 3 days after pre-warning = H&R. 3 accumulated H&Rs = loss of download rights. Global ratio: maintain 0.25 or better.",
+    "min_hours": 120,
+    "min_ratio": 1.0,
+    "min_global_ratio": 0.25,
+    "logic": "or"
+  }
+}

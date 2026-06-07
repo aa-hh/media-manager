@@ -10,6 +10,10 @@ Usage:
   python run.py build           # rebuild final data files from raw intermediates
   python run.py sonarr          # fetch Sonarr TV library only
   python run.py radarr          # fetch Radarr movie library only
+  python run.py sonarr-history  # fetch Sonarr download history (for torrent matching)
+  python run.py radarr-history  # fetch Radarr download history (for torrent matching)
+  python run.py rutorrent       # fetch ruTorrent seeding status (requires history first)
+  python run.py tracker-accounts # fetch tracker account stats (ratio, upload, seeding count)
   python run.py overseerr       # fetch Overseerr requests & watchlists only
   python run.py plex            # fetch Plex watch history only
   python run.py tautulli        # fetch Tautulli watch data only
@@ -36,8 +40,8 @@ CONFIG_DIR = ROOT / "config"
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib import config, log
-from lib.collectors import sonarr, radarr, overseerr, tautulli, tmdb, plex, services
-from lib.processors import enrichment, deletion, forecasting
+from lib.collectors import sonarr, radarr, overseerr, tautulli, tmdb, plex, services, rutorrent, tracker_accounts
+from lib.processors import enrichment, deletion, forecasting, torrents
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -124,6 +128,9 @@ def _cfg() -> dict:
         "tmdb_key": config.get("TMDB_API_KEY", ""),
         "tv_section_ids": [s.strip() for s in config.get("PLEX_TV_SECTIONS", "1").split(",") if s.strip()],
         "movie_section_ids": [s.strip() for s in config.get("PLEX_MOVIE_SECTIONS", "2").split(",") if s.strip()],
+        "rutorrent_url":      config.get("RUTORRENT_URL", ""),
+        "rutorrent_username": config.get("RUTORRENT_USERNAME", ""),
+        "rutorrent_password": config.get("RUTORRENT_PASSWORD", ""),
     }
 
 
@@ -267,6 +274,93 @@ def fetch_tmdb(_build: bool = True) -> None:
     tmdb.enrich(radarr_items, "movie", c["tmdb_key"], CACHE_DIR / "tmdb_movies.json")
     _record_run("tmdb")
     log.info("=== TMDB enrichment complete ===")
+    if _build:
+        build()
+
+
+def fetch_sonarr_history(_build: bool = True) -> None:
+    log.info("=== Sonarr history fetch started ===")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    c = _cfg()
+    items: list = []
+    for i, url in enumerate(c["sonarr_urls"]):
+        key = c["sonarr_keys"][i] if i < len(c["sonarr_keys"]) else (c["sonarr_keys"][0] if c["sonarr_keys"] else "")
+        try:
+            items.extend(sonarr.fetch_history(url, key))
+        except Exception as e:
+            log.warn(f"Sonarr history {url}: {e}")
+    (DATA_DIR / "raw_sonarr_history.json").write_text(json.dumps(items, indent=2))
+    log.info(f"Sonarr history: {len(items)} records saved")
+    log.info("=== Sonarr history fetch complete ===")
+    if _build:
+        build()
+
+
+def fetch_radarr_history(_build: bool = True) -> None:
+    log.info("=== Radarr history fetch started ===")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    c = _cfg()
+    items: list = []
+    for i, url in enumerate(c["radarr_urls"]):
+        key = c["radarr_keys"][i] if i < len(c["radarr_keys"]) else (c["radarr_keys"][0] if c["radarr_keys"] else "")
+        try:
+            items.extend(radarr.fetch_history(url, key))
+        except Exception as e:
+            log.warn(f"Radarr history {url}: {e}")
+    (DATA_DIR / "raw_radarr_history.json").write_text(json.dumps(items, indent=2))
+    log.info(f"Radarr history: {len(items)} records saved")
+    log.info("=== Radarr history fetch complete ===")
+    if _build:
+        build()
+
+
+def fetch_rutorrent(_build: bool = True) -> None:
+    log.info("=== ruTorrent fetch started ===")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    c = _cfg()
+    items: list = []
+    if not c["rutorrent_url"]:
+        log.info("RUTORRENT_URL not configured — skipping")
+    else:
+        # Collect known hashes from Sonarr/Radarr history first
+        sonarr_hist = _load_raw("sonarr_history", [])
+        radarr_hist = _load_raw("radarr_history", [])
+        hashes = list({
+            (e.get("download_id") or "").upper()
+            for e in sonarr_hist + radarr_hist
+            if e.get("download_id")
+        })
+        if hashes:
+            try:
+                items = rutorrent.fetch(
+                    c["rutorrent_url"],
+                    c["rutorrent_username"],
+                    c["rutorrent_password"],
+                    hashes,
+                )
+            except Exception as e:
+                log.warn(f"ruTorrent unavailable: {e}")
+        else:
+            log.info("No torrent hashes from Sonarr/Radarr history — run sonarr/radarr history first")
+    (DATA_DIR / "raw_rutorrent.json").write_text(json.dumps(items, indent=2))
+    log.info(f"ruTorrent: {len(items)} torrents saved")
+    _record_run("rutorrent")
+    log.info("=== ruTorrent fetch complete ===")
+    if _build:
+        build()
+
+
+def fetch_tracker_accounts(_build: bool = True) -> None:
+    log.info("=== Tracker accounts fetch started ===")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        accounts = tracker_accounts.fetch(CONFIG_DIR)
+    except Exception as e:
+        log.warn(f"Tracker accounts unavailable: {e}")
+        accounts = {}
+    (DATA_DIR / "raw_tracker_accounts.json").write_text(json.dumps(accounts, indent=2))
+    log.info(f"Tracker accounts: {len(accounts)} tracker(s) saved")
+    log.info("=== Tracker accounts fetch complete ===")
     if _build:
         build()
 
@@ -456,6 +550,11 @@ def build() -> None:
 
     deletion.apply(shows)
     deletion.apply(movies)
+
+    torrent_map = torrents.apply(DATA_DIR, CONFIG_DIR, shows, movies)
+    if torrent_map:
+        log.info(f"Torrents: matched {len(torrent_map)} items")
+
     forecasting.record_snapshot(DATA_DIR, shows, movies)
 
     users = _build_users(shows, movies, ov_users, watch_data.get("users", []))
@@ -485,6 +584,10 @@ def collect() -> None:
 
     fetch_sonarr(_build=False)
     fetch_radarr(_build=False)
+    fetch_sonarr_history(_build=False)
+    fetch_radarr_history(_build=False)
+    fetch_rutorrent(_build=False)
+    fetch_tracker_accounts(_build=False)
     fetch_tmdb(_build=False)
     fetch_overseerr(_build=False)
     fetch_watch_history(_build=False)
@@ -686,15 +789,19 @@ def _get_capacity() -> float | None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 COMMANDS: dict = {
-    "sonarr":    fetch_sonarr,
-    "radarr":    fetch_radarr,
-    "overseerr": fetch_overseerr,
-    "watch":     fetch_watch_history,
-    "tmdb":      fetch_tmdb,
-    "services":  fetch_services,
-    "build":     build,
-    "collect":   collect,
-    "generate":  generate,
+    "sonarr":          fetch_sonarr,
+    "radarr":          fetch_radarr,
+    "sonarr-history":  fetch_sonarr_history,
+    "radarr-history":  fetch_radarr_history,
+    "rutorrent":          fetch_rutorrent,
+    "tracker-accounts":   fetch_tracker_accounts,
+    "overseerr":       fetch_overseerr,
+    "watch":           fetch_watch_history,
+    "tmdb":            fetch_tmdb,
+    "services":        fetch_services,
+    "build":           build,
+    "collect":         collect,
+    "generate":        generate,
 }
 
 

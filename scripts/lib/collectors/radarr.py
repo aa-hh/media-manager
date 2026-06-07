@@ -70,6 +70,37 @@ def _extract_file_info(movie: dict) -> dict:
     }
 
 
+def fetch_history(url: str, api_key: str) -> list[dict]:
+    """Fetch 'Grabbed' history events — returns [{download_id, radarr_id}] for torrent matching."""
+    base    = url.rstrip("/")
+    headers = {"X-Api-Key": api_key}
+    items: list[dict] = []
+    page, page_size = 1, 1000
+    try:
+        while True:
+            resp = requests.get(
+                f"{base}/api/v3/history",
+                headers=headers,
+                params={"eventType": 1, "pageSize": page_size, "page": page},
+                timeout=30, verify=verify_ssl(),
+            )
+            resp.raise_for_status()
+            data    = resp.json()
+            records = data.get("records", [])
+            for r in records:
+                dl_id    = (r.get("downloadId") or "").strip()
+                movie_id = r.get("movieId")
+                if dl_id and movie_id:
+                    items.append({"download_id": dl_id.upper(), "radarr_id": movie_id})
+            if len(records) < page_size:
+                break
+            page += 1
+    except Exception as e:
+        log.warn(f"Radarr history: {e}")
+    log.info(f"Radarr: {len(items)} history records")
+    return items
+
+
 def fetch(url: str, api_key: str) -> list[dict]:
     headers = {"X-Api-Key": api_key}
     endpoint = urljoin(url.rstrip("/") + "/", "api/v3/movie")

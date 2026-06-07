@@ -882,7 +882,10 @@ def _read_config_env() -> dict:
 
 
 def _write_config_env(values: dict) -> None:
-    url_keys = {"SONARR_URL", "RADARR_URL", "SEERR_URL", "PLEX_URL", "TAUTULLI_URL"}
+    url_keys = {
+        "SONARR_URL", "RADARR_URL", "SEERR_URL", "PLEX_URL", "TAUTULLI_URL",
+        "RUTORRENT_URL", "TRACKER_BLUTOPIA_URL", "TRACKER_BEYONDHD_URL", "TRACKER_PRIVATEHD_URL",
+    }
     for k in url_keys:
         if k in values and values[k]:
             if not values[k].startswith(("http://", "https://")):
@@ -930,6 +933,41 @@ async def setup_test_service(request: Request):
                                      params={"api_key": key})
                 r.raise_for_status()
                 return JSONResponse({"ok": True, "version": "API v3"})
+            elif service == "rutorrent":
+                import xmlrpc.client
+                rpc_url = url.rstrip("/") + "/RPC2"
+                auth_url = rpc_url
+                if key:  # key = "username:password" format sent from UI
+                    parts = key.split(":", 1)
+                    if len(parts) == 2:
+                        from urllib.parse import quote
+                        proto, rest = rpc_url.split("://", 1)
+                        auth_url = f"{proto}://{quote(parts[0])}:{quote(parts[1])}@{rest}"
+                body = xmlrpc.client.dumps((), methodname="system.listMethods")
+                r = await client.post(auth_url, content=body.encode(), headers={"Content-Type": "text/xml"})
+                r.raise_for_status()
+                return JSONResponse({"ok": True, "version": "rTorrent"})
+            elif service in ("tracker-blutopia", "tracker-beyondhd", "tracker-privatehd"):
+                # UNIT3D tracker API: GET /api/user/{username}?api_token={key}
+                username = body.get("username", "")
+                if not username:
+                    return JSONResponse({"ok": False, "error": "Username required"}, status_code=200)
+                r = await client.get(
+                    f"{url.rstrip('/')}/api/user/{username}",
+                    params={"api_token": key},
+                )
+                if r.status_code == 401:
+                    return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
+                if r.status_code == 404:
+                    return JSONResponse({"ok": False, "error": "User not found"}, status_code=200)
+                r.raise_for_status()
+                data = r.json().get("data", {})
+                ratio = None
+                up = data.get("uploaded") or 0
+                dn = data.get("downloaded") or 1
+                if dn:
+                    ratio = round(up / dn, 3)
+                return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
     except Exception as e:
@@ -1025,21 +1063,33 @@ async def settings_get_services():
     """Return current service configuration from config/.env."""
     cfg = _read_config_env()
     return JSONResponse({
-        "SONARR_URL":          cfg.get("SONARR_URL", ""),
-        "SONARR_API_KEY":      cfg.get("SONARR_API_KEY", ""),
-        "RADARR_URL":          cfg.get("RADARR_URL", ""),
-        "RADARR_API_KEY":      cfg.get("RADARR_API_KEY", ""),
-        "SEERR_URL":           cfg.get("SEERR_URL", ""),
-        "SEERR_API_KEY":       cfg.get("SEERR_API_KEY", ""),
-        "PLEX_URL":            cfg.get("PLEX_URL", ""),
-        "PLEX_TOKEN":          cfg.get("PLEX_TOKEN", ""),
-        "PLEX_TV_SECTIONS":    cfg.get("PLEX_TV_SECTIONS", ""),
-        "PLEX_MOVIE_SECTIONS": cfg.get("PLEX_MOVIE_SECTIONS", ""),
-        "TAUTULLI_URL":        cfg.get("TAUTULLI_URL", ""),
-        "TAUTULLI_API_KEY":    cfg.get("TAUTULLI_API_KEY", ""),
-        "TMDB_API_KEY":        cfg.get("TMDB_API_KEY", ""),
-        "STORAGE_CAPACITY_GB": cfg.get("STORAGE_CAPACITY_GB", ""),
-        "VERIFY_SSL":          cfg.get("VERIFY_SSL", "true"),
+        "SONARR_URL":                cfg.get("SONARR_URL", ""),
+        "SONARR_API_KEY":            cfg.get("SONARR_API_KEY", ""),
+        "RADARR_URL":                cfg.get("RADARR_URL", ""),
+        "RADARR_API_KEY":            cfg.get("RADARR_API_KEY", ""),
+        "SEERR_URL":                 cfg.get("SEERR_URL", ""),
+        "SEERR_API_KEY":             cfg.get("SEERR_API_KEY", ""),
+        "PLEX_URL":                  cfg.get("PLEX_URL", ""),
+        "PLEX_TOKEN":                cfg.get("PLEX_TOKEN", ""),
+        "PLEX_TV_SECTIONS":          cfg.get("PLEX_TV_SECTIONS", ""),
+        "PLEX_MOVIE_SECTIONS":       cfg.get("PLEX_MOVIE_SECTIONS", ""),
+        "TAUTULLI_URL":              cfg.get("TAUTULLI_URL", ""),
+        "TAUTULLI_API_KEY":          cfg.get("TAUTULLI_API_KEY", ""),
+        "TMDB_API_KEY":              cfg.get("TMDB_API_KEY", ""),
+        "STORAGE_CAPACITY_GB":       cfg.get("STORAGE_CAPACITY_GB", ""),
+        "VERIFY_SSL":                cfg.get("VERIFY_SSL", "true"),
+        "RUTORRENT_URL":             cfg.get("RUTORRENT_URL", ""),
+        "RUTORRENT_USERNAME":        cfg.get("RUTORRENT_USERNAME", ""),
+        "RUTORRENT_PASSWORD":        cfg.get("RUTORRENT_PASSWORD", ""),
+        "TRACKER_BLUTOPIA_URL":      cfg.get("TRACKER_BLUTOPIA_URL", ""),
+        "TRACKER_BLUTOPIA_USERNAME": cfg.get("TRACKER_BLUTOPIA_USERNAME", ""),
+        "TRACKER_BLUTOPIA_API_KEY":  cfg.get("TRACKER_BLUTOPIA_API_KEY", ""),
+        "TRACKER_BEYONDHD_URL":      cfg.get("TRACKER_BEYONDHD_URL", ""),
+        "TRACKER_BEYONDHD_USERNAME": cfg.get("TRACKER_BEYONDHD_USERNAME", ""),
+        "TRACKER_BEYONDHD_API_KEY":  cfg.get("TRACKER_BEYONDHD_API_KEY", ""),
+        "TRACKER_PRIVATEHD_URL":     cfg.get("TRACKER_PRIVATEHD_URL", ""),
+        "TRACKER_PRIVATEHD_USERNAME":cfg.get("TRACKER_PRIVATEHD_USERNAME", ""),
+        "TRACKER_PRIVATEHD_API_KEY": cfg.get("TRACKER_PRIVATEHD_API_KEY", ""),
     })
 
 
@@ -1140,6 +1190,10 @@ async def settings_save_config(request: Request):
         "SEERR_URL", "SEERR_API_KEY", "PLEX_URL", "PLEX_TOKEN",
         "TAUTULLI_URL", "TAUTULLI_API_KEY", "TMDB_API_KEY",
         "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB", "VERIFY_SSL",
+        "RUTORRENT_URL", "RUTORRENT_USERNAME", "RUTORRENT_PASSWORD",
+        "TRACKER_BLUTOPIA_URL", "TRACKER_BLUTOPIA_USERNAME", "TRACKER_BLUTOPIA_API_KEY",
+        "TRACKER_BEYONDHD_URL", "TRACKER_BEYONDHD_USERNAME", "TRACKER_BEYONDHD_API_KEY",
+        "TRACKER_PRIVATEHD_URL", "TRACKER_PRIVATEHD_USERNAME", "TRACKER_PRIVATEHD_API_KEY",
     }
     config_values = {k: v for k, v in body.items() if k in allowed_keys}
     try:
