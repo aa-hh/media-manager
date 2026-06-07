@@ -949,33 +949,39 @@ async def setup_test_service(request: Request):
                 return JSONResponse({"ok": True, "version": "rTorrent"})
             elif service in ("tracker-blutopia", "tracker-beyondhd"):
                 username = body.get("username", "").strip()
-                # Try fetching the authenticated user's own profile (no username needed).
-                # Falls back to the torrents list if the user endpoint isn't available.
+                if username:
+                    r = await client.get(
+                        f"{url.rstrip('/')}/api/user/{username}",
+                        params={"api_token": key},
+                    )
+                    if r.status_code == 401:
+                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
+                    if r.status_code == 403:
+                        return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
+                    if r.status_code == 404:
+                        return JSONResponse({"ok": False, "error": "User not found (404) — username may be case-sensitive, check your profile URL"}, status_code=200)
+                    if not r.is_success:
+                        return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
+                    try:
+                        data = r.json().get("data", {})
+                    except Exception:
+                        return JSONResponse({"ok": False, "error": "Unexpected response from tracker — check the URL"}, status_code=200)
+                    up = data.get("uploaded") or 0
+                    dn = data.get("downloaded") or 1
+                    ratio = round(up / dn, 3) if dn else None
+                    return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
+                # No username — just confirm the API key works via the torrents list
                 r = await client.get(
-                    f"{url.rstrip('/')}/api/user",
-                    params={"api_token": key},
+                    f"{url.rstrip('/')}/api/torrents",
+                    params={"api_token": key, "perPage": 1},
                 )
                 if r.status_code == 401:
                     return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
                 if r.status_code == 403:
                     return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
-                if r.is_success:
-                    data = r.json().get("data", {})
-                    up = data.get("uploaded") or 0
-                    dn = data.get("downloaded") or 1
-                    ratio = round(up / dn, 3) if dn else None
-                    fetched_username = data.get("username") or username or "—"
-                    return JSONResponse({"ok": True, "version": f"{fetched_username} · ratio {ratio}" if ratio is not None else f"{fetched_username} · Connected"})
-                # Fallback: confirm key via torrents list
-                r2 = await client.get(
-                    f"{url.rstrip('/')}/api/torrents",
-                    params={"api_token": key, "perPage": 1},
-                )
-                if r2.status_code == 401:
-                    return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
-                if not r2.is_success:
-                    return JSONResponse({"ok": False, "error": f"HTTP {r2.status_code} — check URL and API key"}, status_code=200)
-                return JSONResponse({"ok": True, "version": "API key valid"})
+                if not r.is_success:
+                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} — check URL and API key"}, status_code=200)
+                return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
             elif service == "tracker-privatehd":
                 # AvistaZ auth: POST credentials → bearer token → GET /api/v1/users/me
                 username = body.get("username", "").strip()
