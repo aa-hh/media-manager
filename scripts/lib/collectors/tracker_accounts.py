@@ -36,7 +36,10 @@ def _fetch_avistaz(base_url: str, username: str, password: str, pid: str, verify
         data={"username": username, "password": password, "pid": pid},
         timeout=15,
         verify=verify,
+        allow_redirects=False,
     )
+    if auth_resp.is_redirect:
+        raise ValueError("Authentication failed — credentials rejected (redirect to login page)")
     auth_resp.raise_for_status()
     token = auth_resp.json().get("token")
     if not token:

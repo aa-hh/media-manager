@@ -989,13 +989,15 @@ async def setup_test_service(request: Request):
                 pid = body.get("pid", "").strip()
                 if not username or not password or not pid:
                     return JSONResponse({"ok": False, "error": "Username, password, and PID are all required"}, status_code=200)
-                auth_r = await client.post(
-                    f"{url.rstrip('/')}/api/v1/jackett/auth",
-                    data={"username": username, "password": password, "pid": pid},
-                    follow_redirects=False,
-                )
+                # Use a separate client with redirects disabled so a login-page
+                # redirect is caught as auth failure rather than followed.
+                async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
+                    auth_r = await no_redir.post(
+                        f"{url.rstrip('/')}/api/v1/jackett/auth",
+                        data={"username": username, "password": password, "pid": pid},
+                    )
                 if auth_r.status_code in (301, 302, 303, 307, 308):
-                    return JSONResponse({"ok": False, "error": "Authentication failed — credentials rejected (redirect to login). Check username, password, and PID."}, status_code=200)
+                    return JSONResponse({"ok": False, "error": "Authentication failed — credentials rejected (redirected to login). Check username, password, and PID."}, status_code=200)
                 if auth_r.status_code in (401, 403):
                     return JSONResponse({"ok": False, "error": "Authentication failed — check username, password, and PID"}, status_code=200)
                 if not auth_r.is_success:
