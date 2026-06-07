@@ -949,32 +949,33 @@ async def setup_test_service(request: Request):
                 return JSONResponse({"ok": True, "version": "rTorrent"})
             elif service in ("tracker-blutopia", "tracker-beyondhd"):
                 username = body.get("username", "").strip()
-                if username:
-                    r = await client.get(
-                        f"{url.rstrip('/')}/api/user/{username}",
-                        params={"api_token": key},
-                    )
-                else:
-                    r = await client.get(
-                        f"{url.rstrip('/')}/api/torrents",
-                        params={"api_token": key, "perPage": 1},
-                    )
+                # Try fetching the authenticated user's own profile (no username needed).
+                # Falls back to the torrents list if the user endpoint isn't available.
+                r = await client.get(
+                    f"{url.rstrip('/')}/api/user",
+                    params={"api_token": key},
+                )
                 if r.status_code == 401:
-                    return JSONResponse({"ok": False, "error": "Invalid API key (401)"}, status_code=200)
+                    return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
                 if r.status_code == 403:
                     return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
-                if r.status_code == 404:
-                    return JSONResponse({"ok": False, "error": "User not found (404) — check username"}, status_code=200)
-                if not r.is_success:
-                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
-                if username:
+                if r.is_success:
                     data = r.json().get("data", {})
                     up = data.get("uploaded") or 0
                     dn = data.get("downloaded") or 1
                     ratio = round(up / dn, 3) if dn else None
-                    return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
-                else:
-                    return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
+                    fetched_username = data.get("username") or username or "—"
+                    return JSONResponse({"ok": True, "version": f"{fetched_username} · ratio {ratio}" if ratio is not None else f"{fetched_username} · Connected"})
+                # Fallback: confirm key via torrents list
+                r2 = await client.get(
+                    f"{url.rstrip('/')}/api/torrents",
+                    params={"api_token": key, "perPage": 1},
+                )
+                if r2.status_code == 401:
+                    return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
+                if not r2.is_success:
+                    return JSONResponse({"ok": False, "error": f"HTTP {r2.status_code} — check URL and API key"}, status_code=200)
+                return JSONResponse({"ok": True, "version": "API key valid"})
             elif service == "tracker-privatehd":
                 # AvistaZ auth: POST credentials → bearer token → GET /api/v1/users/me
                 username = body.get("username", "").strip()
@@ -985,10 +986,14 @@ async def setup_test_service(request: Request):
                 auth_r = await client.post(
                     f"{url.rstrip('/')}/api/v1/jackett/auth",
                     data={"username": username, "password": password, "pid": pid},
+                    follow_redirects=False,
                 )
+                if auth_r.status_code in (301, 302, 303, 307, 308):
+                    return JSONResponse({"ok": False, "error": "Authentication failed — credentials rejected (redirect to login). Check username, password, and PID."}, status_code=200)
                 if auth_r.status_code in (401, 403):
                     return JSONResponse({"ok": False, "error": "Authentication failed — check username, password, and PID"}, status_code=200)
-                auth_r.raise_for_status()
+                if not auth_r.is_success:
+                    return JSONResponse({"ok": False, "error": f"Auth endpoint returned HTTP {auth_r.status_code}"}, status_code=200)
                 token = auth_r.json().get("token")
                 if not token:
                     return JSONResponse({"ok": False, "error": "No token returned from auth endpoint"}, status_code=200)

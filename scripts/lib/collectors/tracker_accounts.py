@@ -63,15 +63,31 @@ def _fetch_avistaz(base_url: str, username: str, password: str, pid: str, verify
 
 
 def _fetch_unit3d(base_url: str, username: str, api_key: str, verify: bool) -> dict:
-    """Fetch account stats from a UNIT3D tracker REST API."""
-    url = base_url.rstrip("/") + f"/api/user/{username}"
-    resp = _requests.get(url, params={"api_token": api_key}, timeout=15, verify=verify)
+    """Fetch account stats from a UNIT3D tracker REST API.
+
+    Tries /api/user (authenticated user's own profile, no username needed) first,
+    then falls back to /api/user/{username} if a username was provided.
+    """
+    # Prefer the no-username endpoint — avoids case-sensitivity issues
+    resp = _requests.get(
+        base_url.rstrip("/") + "/api/user",
+        params={"api_token": api_key},
+        timeout=15,
+        verify=verify,
+    )
+    if not resp.ok and username:
+        resp = _requests.get(
+            base_url.rstrip("/") + f"/api/user/{username}",
+            params={"api_token": api_key},
+            timeout=15,
+            verify=verify,
+        )
     resp.raise_for_status()
     data = resp.json().get("data", {})
     up = data.get("uploaded") or 0
     dn = data.get("downloaded") or 1
     return {
-        "username": username,
+        "username": data.get("username") or username,
         "uploaded_bytes": up,
         "downloaded_bytes": dn,
         "ratio": round(up / dn, 4) if dn else None,
@@ -95,26 +111,20 @@ def fetch(config_dir: Path) -> dict:
     bt_user = cfg.get("TRACKER_BLUTOPIA_USERNAME", "")
     bt_key  = cfg.get("TRACKER_BLUTOPIA_API_KEY", "")
     if bt_key:
-        if bt_user:
-            try:
-                accounts["blutopia.cc"] = _fetch_unit3d(bt_url, bt_user, bt_key, verify)
-            except Exception as e:
-                accounts["blutopia.cc"] = {"username": bt_user, "error": str(e)}
-        else:
-            accounts["blutopia.cc"] = {"error": "Username not configured — add your Blutopia username to fetch ratio stats"}
+        try:
+            accounts["blutopia.cc"] = _fetch_unit3d(bt_url, bt_user, bt_key, verify)
+        except Exception as e:
+            accounts["blutopia.cc"] = {"username": bt_user or None, "error": str(e)}
 
     # Beyond-HD (UNIT3D)
     bhd_url  = cfg.get("TRACKER_BEYONDHD_URL", "https://beyond-hd.me")
     bhd_user = cfg.get("TRACKER_BEYONDHD_USERNAME", "")
     bhd_key  = cfg.get("TRACKER_BEYONDHD_API_KEY", "")
     if bhd_key:
-        if bhd_user:
-            try:
-                accounts["beyond-hd.me"] = _fetch_unit3d(bhd_url, bhd_user, bhd_key, verify)
-            except Exception as e:
-                accounts["beyond-hd.me"] = {"username": bhd_user, "error": str(e)}
-        else:
-            accounts["beyond-hd.me"] = {"error": "Username not configured — add your Beyond-HD username to fetch ratio stats"}
+        try:
+            accounts["beyond-hd.me"] = _fetch_unit3d(bhd_url, bhd_user, bhd_key, verify)
+        except Exception as e:
+            accounts["beyond-hd.me"] = {"username": bhd_user or None, "error": str(e)}
 
     # PrivateHD (AvistaZ) — auth via /api/v1/jackett/auth
     phd_url  = cfg.get("TRACKER_PRIVATEHD_URL", "https://privatehd.to")
