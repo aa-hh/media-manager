@@ -947,7 +947,7 @@ async def setup_test_service(request: Request):
                 r = await client.post(auth_url, content=body.encode(), headers={"Content-Type": "text/xml"})
                 r.raise_for_status()
                 return JSONResponse({"ok": True, "version": "rTorrent"})
-            elif service in ("tracker-blutopia", "tracker-beyondhd", "tracker-privatehd"):
+            elif service in ("tracker-blutopia", "tracker-beyondhd"):
                 username = body.get("username", "").strip()
                 if username:
                     # Full test: fetch user profile for ratio/stats
@@ -975,6 +975,33 @@ async def setup_test_service(request: Request):
                         return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
                     r.raise_for_status()
                     return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
+            elif service == "tracker-privatehd":
+                # AvistaZ auth: POST credentials → bearer token → GET /api/v1/users/me
+                username = body.get("username", "").strip()
+                password = body.get("password", "").strip()
+                pid = body.get("pid", "").strip()
+                if not username or not password or not pid:
+                    return JSONResponse({"ok": False, "error": "Username, password, and PID are all required"}, status_code=200)
+                auth_r = await client.post(
+                    f"{url.rstrip('/')}/api/v1/jackett/auth",
+                    data={"username": username, "password": password, "pid": pid},
+                )
+                if auth_r.status_code in (401, 403):
+                    return JSONResponse({"ok": False, "error": "Authentication failed — check username, password, and PID"}, status_code=200)
+                auth_r.raise_for_status()
+                token = auth_r.json().get("token")
+                if not token:
+                    return JSONResponse({"ok": False, "error": "No token returned from auth endpoint"}, status_code=200)
+                me_r = await client.get(
+                    f"{url.rstrip('/')}/api/v1/users/me",
+                    params={"api_token": token},
+                )
+                me_r.raise_for_status()
+                data = me_r.json().get("data", {})
+                up = data.get("uploaded") or 0
+                dn = data.get("downloaded") or 1
+                ratio = round(up / dn, 3) if dn else None
+                return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
     except Exception as e:
@@ -1094,9 +1121,10 @@ async def settings_get_services():
         "TRACKER_BEYONDHD_URL":      cfg.get("TRACKER_BEYONDHD_URL", ""),
         "TRACKER_BEYONDHD_USERNAME": cfg.get("TRACKER_BEYONDHD_USERNAME", ""),
         "TRACKER_BEYONDHD_API_KEY":  cfg.get("TRACKER_BEYONDHD_API_KEY", ""),
-        "TRACKER_PRIVATEHD_URL":     cfg.get("TRACKER_PRIVATEHD_URL", ""),
-        "TRACKER_PRIVATEHD_USERNAME":cfg.get("TRACKER_PRIVATEHD_USERNAME", ""),
-        "TRACKER_PRIVATEHD_API_KEY": cfg.get("TRACKER_PRIVATEHD_API_KEY", ""),
+        "TRACKER_PRIVATEHD_URL":      cfg.get("TRACKER_PRIVATEHD_URL", ""),
+        "TRACKER_PRIVATEHD_USERNAME": cfg.get("TRACKER_PRIVATEHD_USERNAME", ""),
+        "TRACKER_PRIVATEHD_PASSWORD": cfg.get("TRACKER_PRIVATEHD_PASSWORD", ""),
+        "TRACKER_PRIVATEHD_PID":      cfg.get("TRACKER_PRIVATEHD_PID", ""),
     })
 
 
@@ -1200,7 +1228,8 @@ async def settings_save_config(request: Request):
         "RUTORRENT_URL", "RUTORRENT_USERNAME", "RUTORRENT_PASSWORD",
         "TRACKER_BLUTOPIA_URL", "TRACKER_BLUTOPIA_USERNAME", "TRACKER_BLUTOPIA_API_KEY",
         "TRACKER_BEYONDHD_URL", "TRACKER_BEYONDHD_USERNAME", "TRACKER_BEYONDHD_API_KEY",
-        "TRACKER_PRIVATEHD_URL", "TRACKER_PRIVATEHD_USERNAME", "TRACKER_PRIVATEHD_API_KEY",
+        "TRACKER_PRIVATEHD_URL", "TRACKER_PRIVATEHD_USERNAME",
+        "TRACKER_PRIVATEHD_PASSWORD", "TRACKER_PRIVATEHD_PID",
     }
     config_values = {k: v for k, v in body.items() if k in allowed_keys}
     try:
