@@ -948,26 +948,33 @@ async def setup_test_service(request: Request):
                 r.raise_for_status()
                 return JSONResponse({"ok": True, "version": "rTorrent"})
             elif service in ("tracker-blutopia", "tracker-beyondhd", "tracker-privatehd"):
-                # UNIT3D tracker API: GET /api/user/{username}?api_token={key}
-                username = body.get("username", "")
-                if not username:
-                    return JSONResponse({"ok": False, "error": "Username required"}, status_code=200)
-                r = await client.get(
-                    f"{url.rstrip('/')}/api/user/{username}",
-                    params={"api_token": key},
-                )
-                if r.status_code == 401:
-                    return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
-                if r.status_code == 404:
-                    return JSONResponse({"ok": False, "error": "User not found"}, status_code=200)
-                r.raise_for_status()
-                data = r.json().get("data", {})
-                ratio = None
-                up = data.get("uploaded") or 0
-                dn = data.get("downloaded") or 1
-                if dn:
-                    ratio = round(up / dn, 3)
-                return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
+                username = body.get("username", "").strip()
+                if username:
+                    # Full test: fetch user profile for ratio/stats
+                    r = await client.get(
+                        f"{url.rstrip('/')}/api/user/{username}",
+                        params={"api_token": key},
+                    )
+                    if r.status_code == 401:
+                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
+                    if r.status_code == 404:
+                        return JSONResponse({"ok": False, "error": "User not found — check username"}, status_code=200)
+                    r.raise_for_status()
+                    data = r.json().get("data", {})
+                    up = data.get("uploaded") or 0
+                    dn = data.get("downloaded") or 1
+                    ratio = round(up / dn, 3) if dn else None
+                    return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
+                else:
+                    # Key-only test: validate API key is accepted
+                    r = await client.get(
+                        f"{url.rstrip('/')}/api/torrents",
+                        params={"api_token": key, "perPage": 1},
+                    )
+                    if r.status_code == 401:
+                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
+                    r.raise_for_status()
+                    return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
     except Exception as e:

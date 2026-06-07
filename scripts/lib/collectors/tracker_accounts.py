@@ -61,21 +61,27 @@ def fetch(config_dir: Path) -> dict:
     bt_url  = cfg.get("TRACKER_BLUTOPIA_URL", "https://blutopia.cc")
     bt_user = cfg.get("TRACKER_BLUTOPIA_USERNAME", "")
     bt_key  = cfg.get("TRACKER_BLUTOPIA_API_KEY", "")
-    if bt_user and bt_key:
-        try:
-            accounts["blutopia.cc"] = _fetch_unit3d(bt_url, bt_user, bt_key, verify)
-        except Exception as e:
-            accounts["blutopia.cc"] = {"username": bt_user, "error": str(e)}
+    if bt_key:
+        if bt_user:
+            try:
+                accounts["blutopia.cc"] = _fetch_unit3d(bt_url, bt_user, bt_key, verify)
+            except Exception as e:
+                accounts["blutopia.cc"] = {"username": bt_user, "error": str(e)}
+        else:
+            accounts["blutopia.cc"] = {"error": "Username not configured — add your Blutopia username to fetch ratio stats"}
 
     # Beyond-HD (UNIT3D)
     bhd_url  = cfg.get("TRACKER_BEYONDHD_URL", "https://beyond-hd.me")
     bhd_user = cfg.get("TRACKER_BEYONDHD_USERNAME", "")
     bhd_key  = cfg.get("TRACKER_BEYONDHD_API_KEY", "")
-    if bhd_user and bhd_key:
-        try:
-            accounts["beyond-hd.me"] = _fetch_unit3d(bhd_url, bhd_user, bhd_key, verify)
-        except Exception as e:
-            accounts["beyond-hd.me"] = {"username": bhd_user, "error": str(e)}
+    if bhd_key:
+        if bhd_user:
+            try:
+                accounts["beyond-hd.me"] = _fetch_unit3d(bhd_url, bhd_user, bhd_key, verify)
+            except Exception as e:
+                accounts["beyond-hd.me"] = {"username": bhd_user, "error": str(e)}
+        else:
+            accounts["beyond-hd.me"] = {"error": "Username not configured — add your Beyond-HD username to fetch ratio stats"}
 
     # PrivateHD (AvistaZ) — no public REST API available
     phd_user = cfg.get("TRACKER_PRIVATEHD_USERNAME", "")

@@ -1087,12 +1087,12 @@ function buildFormHTML(def) {
       </div>
       <div class="svc-form-row">
         <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" class="form-input" id="tracker-blutopia-username" placeholder="Your username" autocomplete="off" value="${esc(cfg.TRACKER_BLUTOPIA_USERNAME || '')}">
-        </div>
-        <div class="form-group">
           <label class="form-label">API Key</label>
           <input type="password" class="form-input" id="tracker-blutopia-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TRACKER_BLUTOPIA_API_KEY || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username <span style="font-weight:400;color:var(--text-muted)">(for ratio stats)</span></label>
+          <input type="text" class="form-input" id="tracker-blutopia-username" placeholder="optional" autocomplete="off" value="${esc(cfg.TRACKER_BLUTOPIA_USERNAME || '')}">
         </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
@@ -1110,12 +1110,12 @@ function buildFormHTML(def) {
       </div>
       <div class="svc-form-row">
         <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" class="form-input" id="tracker-beyondhd-username" placeholder="Your username" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_USERNAME || '')}">
-        </div>
-        <div class="form-group">
           <label class="form-label">API Key</label>
           <input type="password" class="form-input" id="tracker-beyondhd-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_API_KEY || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username <span style="font-weight:400;color:var(--text-muted)">(for ratio stats)</span></label>
+          <input type="text" class="form-input" id="tracker-beyondhd-username" placeholder="optional" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_USERNAME || '')}">
         </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
