@@ -62,7 +62,7 @@ def test_calculate_no_prediction_when_growth_not_positive(tmp_path):
     ]
     _write_snapshots(tmp_path, snaps)
     result = forecasting.calculate(tmp_path, capacity_gb=200)
-    assert result["growth_gb_per_month"] == 0.0
+    assert result["growth_gb_per_month"] is None
     assert result["predicted_full_date"] is None
 
 
@@ -126,3 +126,58 @@ def test_record_snapshot_handles_corrupt_existing_file(tmp_path):
     forecasting.record_snapshot(tmp_path, [{"size_gb": 1}], [{"size_gb": 1}])
     data = json.loads((tmp_path / "snapshots.json").read_text())
     assert len(data) == 1
+
+
+def test_calculate_growth_none_when_days_span_lt_7(tmp_path):
+    """Snapshots only 3 days apart → insufficient window → None even with real growth."""
+    snaps = [
+        {"date": "2024-01-01", "tv_gb": 0, "movie_gb": 0, "total_gb": 100},
+        {"date": "2024-01-04", "tv_gb": 0, "movie_gb": 0, "total_gb": 130},
+    ]
+    _write_snapshots(tmp_path, snaps)
+    result = forecasting.calculate(tmp_path)
+    assert result["growth_gb_per_month"] is None
+
+
+def test_calculate_growth_none_when_monthly_growth_is_zero(tmp_path):
+    """Identical total_gb across snapshots → zero growth → None."""
+    snaps = [
+        {"date": "2024-01-01", "tv_gb": 50, "movie_gb": 50, "total_gb": 100},
+        {"date": "2024-01-11", "tv_gb": 50, "movie_gb": 50, "total_gb": 100},
+    ]
+    _write_snapshots(tmp_path, snaps)
+    result = forecasting.calculate(tmp_path, capacity_gb=500)
+    assert result["growth_gb_per_month"] is None
+
+
+def test_calculate_days_until_full_populated(tmp_path):
+    """Real growth + capacity → days_until_full is a positive integer."""
+    snaps = [
+        {"date": "2024-01-01", "tv_gb": 0, "movie_gb": 0, "total_gb": 100},
+        {"date": "2024-01-11", "tv_gb": 0, "movie_gb": 0, "total_gb": 110},
+    ]
+    _write_snapshots(tmp_path, snaps)
+    result = forecasting.calculate(tmp_path, capacity_gb=200)
+    assert result["days_until_full"] is not None
+    assert isinstance(result["days_until_full"], int)
+    assert result["days_until_full"] > 0
+
+
+def test_calculate_days_until_full_none_when_no_capacity(tmp_path):
+    snaps = [
+        {"date": "2024-01-01", "tv_gb": 0, "movie_gb": 0, "total_gb": 100},
+        {"date": "2024-01-11", "tv_gb": 0, "movie_gb": 0, "total_gb": 120},
+    ]
+    _write_snapshots(tmp_path, snaps)
+    result = forecasting.calculate(tmp_path)
+    assert result["days_until_full"] is None
+
+
+def test_calculate_days_until_full_none_when_no_growth(tmp_path):
+    snaps = [
+        {"date": "2024-01-01", "tv_gb": 0, "movie_gb": 0, "total_gb": 100},
+        {"date": "2024-01-11", "tv_gb": 0, "movie_gb": 0, "total_gb": 100},
+    ]
+    _write_snapshots(tmp_path, snaps)
+    result = forecasting.calculate(tmp_path, capacity_gb=500)
+    assert result["days_until_full"] is None

@@ -10,60 +10,110 @@
   <h1>Dashboard</h1>
   <p>Storage intelligence at a glance</p>
 </div>
+
+<style>
+/* carousel */
+.sg-carousel-wrap { position: relative; }
+.sg-pages { }
+.sg-page { display: grid; grid-template-columns: repeat(4,1fr); grid-template-rows: repeat(3,1fr); gap:6px; height:300px; }
+.sg-card { position:relative; border-left:4px solid #555; border-radius:6px; padding:8px; text-decoration:none; display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; transition:opacity .15s; }
+.sg-card:hover { opacity:.85; }
+.sg-keep { border-color:#3a6e3a; background:rgba(58,110,58,0.12); }
+.sg-suggest_delete { border-color:#d4a820; background:rgba(212,168,32,0.12); }
+.sg-strong_delete { border-color:#e05252; background:rgba(224,82,82,0.12); }
+.sg-badge { position:absolute; top:6px; right:6px; font-size:10px; padding:1px 5px; border-radius:10px; font-weight:600; }
+.sg-badge.tv { background:rgba(80,140,255,0.25); color:#6aadff; }
+.sg-badge.movie { background:rgba(160,80,255,0.25); color:#c084fc; }
+.sg-title { font-size:12px; color:#dde; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; padding-right:32px; }
+.sg-meta { font-size:11px; color:#8892aa; display:flex; justify-content:space-between; }
+.sg-nav { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:10px; }
+.sg-arrow { background:var(--bg3); border:1px solid #3e4a6a; color:#ccc; font-size:20px; width:36px; height:36px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.sg-arrow:disabled { opacity:.3; cursor:default; }
+.sg-dots { display:flex; gap:6px; align-items:center; }
+.sg-dot { width:8px; height:8px; border-radius:50%; background:#3e4a6a; cursor:pointer; transition:background .2s; }
+.sg-dot.active { background:#6366f1; }
+/* rec grid */
+.rec-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; }
+.rec-item-compact { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #1e2844; }
+.rec-item-compact:last-child { border-bottom:none; }
+.rec-item-compact img { width:28px; height:40px; object-fit:cover; border-radius:3px; flex-shrink:0; }
+.rec-item-compact .placeholder { width:28px; height:40px; background:var(--bg3); border-radius:3px; flex-shrink:0; }
+.rec-item-compact .info { flex:1; min-width:0; }
+.rec-item-compact .info .title { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rec-item-compact .info .meta { font-size:11px; color:var(--text-muted); }
+.rec-item-compact .badge-size { font-size:11px; color:var(--text-muted); white-space:nowrap; flex-shrink:0; }
+.score-pill { font-size:10px; padding:1px 6px; border-radius:8px; font-weight:700; }
+.score-pill.danger { background:rgba(224,82,82,0.2); color:#e05252; }
+.score-pill.warning { background:rgba(224,178,82,0.2); color:#e0b252; }
+.score-pill.safe { background:rgba(82,160,224,0.2); color:#52a0e0; }
+</style>
+
 <div class="content">
 
-  {# ── Summary Cards ── #}
   <div class="section">
     <div class="section-title">Storage Summary</div>
     <div class="stat-grid">
+
       <div class="stat-card">
         <div class="label">TV Storage</div>
-        <div class="value">{{ "%.1f"|format(total_tv_gb) }} GB</div>
+        <div class="value">{{ total_tv_gb | smart_size }}</div>
         <div class="sub">{{ show_count }} shows</div>
       </div>
+
       <div class="stat-card">
         <div class="label">Movie Storage</div>
-        <div class="value">{{ "%.1f"|format(total_movie_gb) }} GB</div>
+        <div class="value">{{ total_movie_gb | smart_size }}</div>
         <div class="sub">{{ movie_count }} movies</div>
       </div>
+
       <div class="stat-card">
         <div class="label">Total Storage</div>
-        <div class="value">{{ "%.1f"|format(total_gb) }} GB</div>
+        <div class="value">{{ total_gb | smart_size }}</div>
         <div class="sub">{{ show_count + movie_count }} items</div>
       </div>
+
+      <div class="stat-card">
+        <div class="label">Free Space</div>
+        {% if remaining_gb is not none %}
+        <div class="value" {% if forecast.capacity_gb and remaining_gb / forecast.capacity_gb < 0.2 %}style="color:var(--yellow)"{% endif %}>{{ remaining_gb | smart_size }}</div>
+        <div class="sub">of {{ forecast.capacity_gb | smart_size }} total</div>
+        {% else %}
+        <div class="value">—</div>
+        <div class="sub">capacity not set</div>
+        {% endif %}
+      </div>
+
       <div class="stat-card">
         <div class="label">Potential Recovery</div>
-        <div class="value" style="color: var(--yellow)">{{ "%.1f"|format(potential_recovery_gb) }} GB</div>
-        <div class="sub">
-          delete candidates<br>
-          <a href="{{ root }}delete/index.html" style="color:var(--accent);font-weight:600;text-decoration:underline">Free Space →</a>
-        </div>
+        <div class="value" style="color:var(--yellow)">{{ potential_recovery_gb | smart_size }}</div>
+        <div class="sub">delete candidates<br><a href="{{ root }}delete/index.html" style="color:var(--accent);font-weight:600;text-decoration:underline">Free Space →</a></div>
       </div>
+
       <div class="stat-card">
         <div class="label">Growth / Month</div>
         <div class="value">
-          {% if forecast.growth_gb_per_month is not none %}
-            {{ "%.1f"|format(forecast.growth_gb_per_month) }} GB
-          {% else %}—{% endif %}
-          {% if sparkline_points %}
-          <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
-            <polyline points="{{ sparkline_points }}" fill="none" stroke="#52a0e0" stroke-width="1.5"/>
-          </svg>
-          {% endif %}
+          {% if forecast.growth_gb_per_month is not none %}{{ forecast.growth_gb_per_month | smart_size }}{% else %}—{% endif %}
+          {% if sparkline_points %}<svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none"><polyline points="{{ sparkline_points }}" fill="none" stroke="#52a0e0" stroke-width="1.5"/></svg>{% endif %}
         </div>
         <div class="sub">30-day average</div>
       </div>
+
       <div class="stat-card">
         <div class="label">Predicted Full</div>
         <div class="value" style="font-size:1.1rem">
-          {% if forecast.predicted_full_date %}
-            {{ forecast.predicted_full_date }}
-          {% else %}—{% endif %}
+          {% if forecast.predicted_full_date %}{{ forecast.predicted_full_date }}{% else %}—{% endif %}
         </div>
         <div class="sub">
-          {% if not forecast.capacity_gb %}capacity not set{% endif %}
+          {% if days_until_full %}~{{ days_until_full }} days away{% elif not forecast.capacity_gb %}capacity not set{% endif %}
         </div>
       </div>
+
+      <div class="stat-card">
+        <div class="label">Codec Efficiency</div>
+        <div class="value" style="font-size:1rem">{{ codec_efficiency.h264_gb | smart_size }} in H.264</div>
+        <div class="sub">est. {{ codec_efficiency.estimated_savings_gb | smart_size }} savings → H.265</div>
+      </div>
+
       {% if most_active_user %}
       <div class="stat-card">
         <div class="label">Most Active User</div>
@@ -71,17 +121,44 @@
         <div class="sub">{{ most_active_user.total_plays }} plays</div>
       </div>
       {% endif %}
+
       {% if most_requested_user %}
       <div class="stat-card">
         <div class="label">Top Requester</div>
         <div class="value" style="font-size:1.2rem">{{ most_requested_user.name }}</div>
-        <div class="sub">{{ most_requested_user.requests_made }} requests · {{ "%.0f"|format(most_requested_user.storage_requested_gb) }} GB</div>
+        <div class="sub">{{ most_requested_user.requests_made }} requests · {{ most_requested_user.storage_requested_gb | smart_size }}</div>
       </div>
       {% endif %}
+
     </div>
   </div>
 
-  {# ── Charts ── #}
+  <div class="section">
+    <div class="section-title">Library Health</div>
+
+    {% if charts.growth.labels %}
+    <div class="chart-card" style="margin-bottom:1rem">
+      <h3>Storage Growth</h3>
+      <canvas id="chartGrowth"></canvas>
+    </div>
+    {% endif %}
+
+    <div class="chart-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="chart-card chart-card--small">
+        <h3>Watched vs Unwatched</h3>
+        <canvas id="chartWatchedUnwatched"></canvas>
+      </div>
+      <div class="chart-card chart-card--small">
+        <h3>Storage by Deletion Status</h3>
+        <canvas id="deletionBucketsChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>By Requester</h3>
+        <canvas id="chartRequester"></canvas>
+      </div>
+    </div>
+  </div>
+
   <div class="section">
     <div class="section-title">Storage Breakdown</div>
     <div class="chart-grid">
@@ -93,413 +170,367 @@
         <h3>Top Movies by Storage</h3>
         <canvas id="topMoviesChart"></canvas>
       </div>
+    </div>
+
+    {% if charts.tv_top_seasons.labels %}
+    <div class="chart-card" style="margin:1rem 0">
+      <h3>Top TV Seasons by Storage</h3>
+      <canvas id="chartTvSeasons"></canvas>
+    </div>
+    {% endif %}
+
+    <div class="chart-grid" style="grid-template-columns:repeat(2,1fr);margin-top:1rem">
       <div class="chart-card chart-card--small">
-        <h3>Storage by Deletion Status</h3>
-        <canvas id="deletionBucketsChart"></canvas>
+        <h3>TV Quality Distribution</h3>
+        <canvas id="chartQualityTv"></canvas>
       </div>
-      <div class="chart-card">
-        <h3>By Requester</h3>
-        <canvas id="chartRequester"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>Storage Growth</h3>
-        <canvas id="chartGrowth"></canvas>
+      <div class="chart-card chart-card--small">
+        <h3>Movie Quality Distribution</h3>
+        <canvas id="chartQualityMovie"></canvas>
       </div>
     </div>
   </div>
 
-  {# ── Treemap ── #}
-  <section class="section">
-    <h2 class="section-title">Storage Treemap</h2>
-    <div class="treemap-header">
-      <div class="treemap-legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#3a6e3a"></span>Keep (&lt;45)</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#7a6020"></span>Review (45–69)</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#7a2020"></span>Delete (70+)</span>
-        <span class="legend-sep">|</span>
-        <span class="legend-item"><span class="legend-ring tv"></span>TV</span>
-        <span class="legend-item"><span class="legend-ring movie"></span>Movie</span>
+  <div class="section">
+    <div class="section-title">Library Analysis</div>
+
+    <div class="chart-card" style="margin-bottom:1rem">
+      <h3>Content Age vs Watch Status <span style="font-size:12px;color:var(--text-muted);font-weight:400">— size = storage · color = watched status</span></h3>
+      <canvas id="chartAgeScatter" style="height:320px"></canvas>
+    </div>
+
+    <div class="chart-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:1rem">
+      <div class="chart-card">
+        <h3>Library Additions by Year</h3>
+        <canvas id="chartContentAge"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>TV — Resolution × Codec</h3>
+        <canvas id="chartResCodecTv"></canvas>
       </div>
     </div>
-    <div class="treemap-container">
-      <canvas id="treemapCanvas"></canvas>
-      <div id="treemapTooltip" class="treemap-tooltip"></div>
+
+    <div class="chart-card" style="margin-bottom:1rem;max-width:50%">
+      <h3>Movies — Resolution × Codec</h3>
+      <canvas id="chartResCodecMovie"></canvas>
     </div>
-  </section>
+  </div>
 
-  <script>
-  (function() {
-    const data = {{ treemap_data | tojson }};
-    const canvas = document.getElementById('treemapCanvas');
-    if (!canvas || !data.length) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const W = canvas.parentElement.clientWidth || 900;
-    const H = Math.max(320, Math.min(520, W * 0.46));
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Deletion score → fill color
-    function scoreColor(score) {
-      if (score >= 70) {
-        // red zone: 70→100 maps deeper red
-        const t = Math.min((score - 70) / 30, 1);
-        const r = Math.round(130 + t * 50);
-        return `rgb(${r},30,30)`;
-      } else if (score >= 45) {
-        // amber zone
-        const t = (score - 45) / 25;
-        return `rgb(${Math.round(110 + t * 20)},${Math.round(90 - t * 20)},20)`;
-      } else {
-        // green zone: 0→44 gets progressively deeper green
-        const t = score / 44;
-        return `rgb(30,${Math.round(90 + t * 20)},30)`;
-      }
-    }
-
-    // Squarified treemap — correct implementation
-    function worstAspect(areas, rowArea, side) {
-      let worst = 0;
-      const s2 = side * side;
-      const ra2 = rowArea * rowArea;
-      for (const a of areas) {
-        if (a <= 0) continue;
-        worst = Math.max(worst, s2 * a / ra2, ra2 / (s2 * a));
-      }
-      return worst;
-    }
-
-    function layout(items, x, y, w, h, result) {
-      if (!items.length || w < 1 || h < 1) return;
-      // Scale items to pixel areas within this rect
-      const total = items.reduce((s, i) => s + i.size_gb, 0);
-      if (total <= 0) return;
-      const pixArea = w * h;
-      const scaled = items.map(i => ({ ...i, _a: (i.size_gb / total) * pixArea }));
-
-      if (scaled.length === 1) {
-        result.push({ ...scaled[0], rx: x, ry: y, rw: w, rh: h });
-        return;
-      }
-
-      const side = Math.min(w, h);
-      let row = [];
-      let rowArea = 0;
-      let prevWorst = Infinity;
-      let split = 0;
-
-      for (let i = 0; i < scaled.length; i++) {
-        const newArea = rowArea + scaled[i]._a;
-        const w_ = worstAspect([...row.map(r => r._a), scaled[i]._a], newArea, side);
-        if (row.length && w_ > prevWorst) break;
-        row.push(scaled[i]);
-        rowArea = newArea;
-        prevWorst = w_;
-        split = i + 1;
-      }
-
-      // Lay out the row as a strip
-      if (w >= h) {
-        // vertical strip on the left
-        const sw = rowArea / h;
-        let cy = y;
-        for (const item of row) {
-          const ch = (item._a / rowArea) * h;
-          result.push({ ...item, rx: x, ry: cy, rw: sw, rh: ch });
-          cy += ch;
-        }
-        layout(scaled.slice(split), x + sw, y, w - sw, h, result);
-      } else {
-        // horizontal strip on top
-        const sh = rowArea / w;
-        let cx = x;
-        for (const item of row) {
-          const cw = (item._a / rowArea) * w;
-          result.push({ ...item, rx: cx, ry: y, rw: cw, rh: sh });
-          cx += cw;
-        }
-        layout(scaled.slice(split), x, y + sh, w, h - sh, result);
-      }
-    }
-
-    function fitText(text, maxPx, fontSize) {
-      ctx.font = `${fontSize}px sans-serif`;
-      if (ctx.measureText(text).width <= maxPx) return text;
-      while (text.length > 3 && ctx.measureText(text + '…').width > maxPx) {
-        text = text.slice(0, -1);
-      }
-      return text + '…';
-    }
-
-    const allRects = [];
-    layout(data, 0, 0, W, H, allRects);
-
-    ctx.clearRect(0, 0, W, H);
-    const GAP = 2;
-    for (const r of allRects) {
-      const rx = r.rx + GAP, ry = r.ry + GAP, rw = r.rw - GAP * 2, rh = r.rh - GAP * 2;
-      if (rw < 2 || rh < 2) continue;
-
-      ctx.fillStyle = scoreColor(r.deletion_score || 0);
-      ctx.beginPath();
-      ctx.roundRect(rx, ry, rw, rh, 4);
-      ctx.fill();
-
-      // Type indicator stripe (top border): TV = blue, movie = purple
-      ctx.fillStyle = r.type === 'show' ? 'rgba(80,140,255,0.5)' : 'rgba(160,80,255,0.5)';
-      ctx.fillRect(rx, ry, rw, 3);
-
-      if (rw > 55 && rh > 28) {
-        const cx = rx + rw / 2;
-        const midY = ry + rh / 2;
-        const fontSize = Math.min(12, Math.max(9, rh * 0.2));
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        const label = fitText(r.title, rw - 8, fontSize);
-        ctx.font = `600 ${fontSize}px sans-serif`;
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        if (rh > 44) {
-          ctx.fillText(label, cx, midY - fontSize * 0.6);
-          ctx.font = `${Math.max(9, fontSize - 1)}px sans-serif`;
-          ctx.fillStyle = 'rgba(255,255,255,0.55)';
-          ctx.fillText(`${r.size_gb.toFixed(1)} GB`, cx, midY + fontSize * 0.7);
-        } else {
-          ctx.fillText(label, cx, midY);
-        }
-      }
-    }
-
-    const tooltip = document.getElementById('treemapTooltip');
-    canvas.addEventListener('mousemove', e => {
-      const b = canvas.getBoundingClientRect();
-      const mx = (e.clientX - b.left) * (W / b.width);
-      const my = (e.clientY - b.top) * (H / b.height);
-      const hit = allRects.find(r => mx >= r.rx && mx <= r.rx + r.rw && my >= r.ry && my <= r.ry + r.rh);
-      if (hit) {
-        const scoreLabel = hit.deletion_score >= 70 ? '🔴 Delete' : hit.deletion_score >= 45 ? '🟡 Review' : '🟢 Keep';
-        const typeLabel = hit.type === 'show' ? 'TV' : 'Movie';
-        const plays = hit.total_plays ? ` · ${hit.total_plays} play${hit.total_plays !== 1 ? 's' : ''}` : '';
-        tooltip.innerHTML = `<strong>${hit.title}</strong><br>${typeLabel} · ${hit.size_gb.toFixed(1)} GB${plays}<br>Score ${hit.deletion_score} — ${scoreLabel}`;
-        const tx = Math.min(e.clientX - b.left + 14, b.width - 200);
-        const ty = Math.max(e.clientY - b.top - 60, 4);
-        tooltip.style.left = tx + 'px';
-        tooltip.style.top = ty + 'px';
-        tooltip.style.display = 'block';
-      } else {
-        tooltip.style.display = 'none';
-      }
-    });
-    canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-    canvas.addEventListener('click', e => {
-      const b = canvas.getBoundingClientRect();
-      const mx = (e.clientX - b.left) * (W / b.width);
-      const my = (e.clientY - b.top) * (H / b.height);
-      const hit = allRects.find(r => mx >= r.rx && mx <= r.rx + r.rw && my >= r.ry && my <= r.ry + r.rh);
-      if (hit && hit.slug) {
-        window.location.href = (hit.type === 'show' ? '/tv/' : '/movies/') + hit.slug + '/';
-      }
-    });
-  })();
-  </script>
-
-  {# ── Recommendation Cards ── #}
   <div class="section">
-    <div class="section-title">Recommendations</div>
-    <div class="rec-grid">
+    <div class="section-title">Storage Map
+      <span style="font-size:12px;color:var(--text-muted);font-weight:400;margin-left:8px">
+        <span style="color:#3a6e3a">■</span> Keep
+        <span style="color:#d4a820;margin-left:6px">■</span> Review
+        <span style="color:#e05252;margin-left:6px">■</span> Delete
+        <span style="margin-left:10px;color:#6aadff">● TV</span>
+        <span style="margin-left:6px;color:#c084fc">● Film</span>
+      </span>
+    </div>
 
-      <div class="rec-card">
-        <h3>🗑 Strong Delete Candidates</h3>
-        {% for item in strong_deletes %}
-        <div class="rec-item">
-          {% if item.poster %}
-            <img src="{{ item.poster }}" alt="">
-          {% else %}
-            <div class="rec-item" style="width:36px;height:54px;background:var(--bg3);border-radius:4px;flex-shrink:0;"></div>
-          {% endif %}
-          <div class="info">
-            <div class="title"><a href="{{ item.type == 'show' and 'tv/' or 'movies/' }}{{ item.slug }}/index.html">{{ item.title }}</a></div>
-            <div class="meta">
-              {% for reason in item.deletion.reasons[:1] %}{{ reason }}{% endfor %}
-            </div>
-          </div>
-          <div class="size">{{ item.size_gb | gb }}</div>
+    <div class="sg-carousel-wrap">
+      <div class="sg-pages" id="sgPages">
+        {% for chunk in treemap_data | batch(12) %}
+        <div class="sg-page" {% if not loop.first %}style="display:none"{% endif %} data-page="{{ loop.index0 }}">
+          {% for item in chunk %}
+          <a href="{{ root }}{{ 'tv' if item.type == 'show' else 'movies' }}/{{ item.slug }}/index.html"
+             class="sg-card sg-{{ item.deletion_rec }}"
+             title="{{ item.title }} · {{ item.size_gb | smart_size }} · score {{ item.deletion_score }}">
+            <span class="sg-badge {{ 'tv' if item.type == 'show' else 'movie' }}">{{ 'TV' if item.type == 'show' else 'Film' }}</span>
+            <span class="sg-title">{{ item.title }}</span>
+            <span class="sg-meta">
+              <span>{{ item.deletion_score }}</span>
+              <span>{{ item.size_gb | smart_size }}</span>
+            </span>
+          </a>
+          {% endfor %}
         </div>
-        {% else %}
-        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">No strong delete candidates.</p>
         {% endfor %}
       </div>
 
+      <div class="sg-nav">
+        <button class="sg-arrow" id="sgPrev" onclick="sgNav(-1)" disabled>&#8249;</button>
+        <div class="sg-dots" id="sgDots"></div>
+        <button class="sg-arrow" id="sgNext" onclick="sgNav(1)">&#8250;</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const pages = Array.from(document.querySelectorAll('.sg-page'));
+    const dots = document.getElementById('sgDots');
+    const prev = document.getElementById('sgPrev');
+    const next = document.getElementById('sgNext');
+    let cur = 0;
+    pages.forEach((_, i) => {
+      const d = document.createElement('span');
+      d.className = 'sg-dot' + (i === 0 ? ' active' : '');
+      d.onclick = () => sgGo(i);
+      dots.appendChild(d);
+    });
+    function sgGo(i) {
+      pages[cur].style.display = 'none';
+      dots.children[cur].classList.remove('active');
+      cur = i;
+      pages[cur].style.display = '';
+      dots.children[cur].classList.add('active');
+      prev.disabled = cur === 0;
+      next.disabled = cur === pages.length - 1;
+    }
+    window.sgNav = dir => sgGo(Math.max(0, Math.min(pages.length-1, cur+dir)));
+    next.disabled = pages.length <= 1;
+  })();
+  </script>
+
+  <div class="section">
+    <div class="section-title">Recommendations</div>
+    <div class="rec-grid-3">
+
       <div class="rec-card">
         <h3>⚠ Largest Unwatched Requests</h3>
-        {% for item in unwatched_requests %}
-        <div class="rec-item">
-          {% if item.poster %}
-            <img src="{{ item.poster }}" alt="">
-          {% else %}
-            <div style="width:36px;height:54px;background:var(--bg3);border-radius:4px;flex-shrink:0;"></div>
-          {% endif %}
+        {% for item in unwatched_requests[:6] %}
+        <div class="rec-item-compact">
+          {% if item.poster %}<img src="{{ item.poster }}" alt="">{% else %}<div class="placeholder"></div>{% endif %}
           <div class="info">
-            <div class="title"><a href="{{ 'tv/' if item.type == 'show' else 'movies/' }}{{ item.slug }}/index.html">{{ item.title }}</a></div>
-            <div class="meta">Requested by {{ item.request.requester_name or "Unknown" }} · never watched</div>
+            <div class="title"><a href="{{ root }}{{ 'tv' if item.type == 'show' else 'movies' }}/{{ item.slug }}/index.html">{{ item.title }}</a></div>
+            <div class="meta">{{ item.request.requester_name or "Unknown" }} · never watched</div>
           </div>
-          <div class="size">{{ item.size_gb | gb }}</div>
+          <div class="badge-size">{{ item.size_gb | smart_size }}</div>
         </div>
         {% else %}
-        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">All requested content has been watched.</p>
+        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0">All requested content has been watched.</p>
         {% endfor %}
       </div>
 
       <div class="rec-card">
         <h3>⭐ Most Valuable Content</h3>
-        {% for item in most_valuable %}
-        <div class="rec-item">
-          {% if item.poster %}
-            <img src="{{ item.poster }}" alt="">
-          {% else %}
-            <div style="width:36px;height:54px;background:var(--bg3);border-radius:4px;flex-shrink:0;"></div>
-          {% endif %}
+        {% for item in most_valuable[:6] %}
+        <div class="rec-item-compact">
+          {% if item.poster %}<img src="{{ item.poster }}" alt="">{% else %}<div class="placeholder"></div>{% endif %}
           <div class="info">
-            <div class="title"><a href="{{ 'tv/' if item.type == 'show' else 'movies/' }}{{ item.slug }}/index.html">{{ item.title }}</a></div>
-            <div class="meta">{{ item.watch_data | length }} users · {{ item.total_plays }} plays · {{ item.size_gb | gb }}</div>
+            <div class="title"><a href="{{ root }}{{ 'tv' if item.type == 'show' else 'movies' }}/{{ item.slug }}/index.html">{{ item.title }}</a></div>
+            <div class="meta">{{ item.watch_data | length }} users · {{ item.total_plays }} plays</div>
           </div>
+          <div class="badge-size">{{ item.size_gb | smart_size }}</div>
         </div>
         {% else %}
-        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">No watch data available yet.</p>
+        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0">No watch data available yet.</p>
         {% endfor %}
       </div>
 
       <div class="rec-card">
-        <h3>📦 Least Valuable (Large, Unwatched)</h3>
-        {% for item in least_valuable %}
-        <div class="rec-item">
-          {% if item.poster %}
-            <img src="{{ item.poster }}" alt="">
-          {% else %}
-            <div style="width:36px;height:54px;background:var(--bg3);border-radius:4px;flex-shrink:0;"></div>
-          {% endif %}
+        <h3>📦 Waste Leaders</h3>
+        {% for item in least_valuable[:6] %}
+        {% set drec = item.deletion.recommendation if item.deletion else 'keep' %}
+        {% set dscore = item.deletion.score if item.deletion else 0 %}
+        <div class="rec-item-compact">
+          {% if item.poster %}<img src="{{ item.poster }}" alt="">{% else %}<div class="placeholder"></div>{% endif %}
           <div class="info">
-            <div class="title"><a href="{{ 'tv/' if item.type == 'show' else 'movies/' }}{{ item.slug }}/index.html">{{ item.title }}</a></div>
-            <div class="meta">{{ item.total_plays }} plays · {{ item.size_gb | gb }}</div>
+            <div class="title"><a href="{{ root }}{{ 'tv' if item.type == 'show' else 'movies' }}/{{ item.slug }}/index.html">{{ item.title }}</a></div>
+            <div class="meta">{{ item.total_plays }} plays · <span class="score-pill {% if drec == 'strong_delete' %}danger{% elif drec == 'suggest_delete' %}warning{% else %}safe{% endif %}">{{ dscore }}</span></div>
           </div>
-          <div class="size">{{ item.size_gb | gb }}</div>
+          <div class="badge-size">{{ item.size_gb | smart_size }}</div>
         </div>
         {% else %}
-        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0;">Nothing to flag.</p>
+        <p style="color:var(--text-muted);font-size:.85rem;padding:8px 0">Nothing to flag.</p>
         {% endfor %}
       </div>
 
     </div>
   </div>
 
-
-</div>
+</div>  {# end .content #}
 {% endblock %}
 
 {% block scripts %}
 <script>
-const CHART_DEFAULTS = {
-  responsive: true,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3855' } },
-    y: { ticks: { color: '#8892aa', callback: v => v + ' GB' }, grid: { color: '#2e3855' } }
-  }
-};
-
-function barChart(id, labels, data, color) {
-  new Chart(document.getElementById(id), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{ data, backgroundColor: color || 'rgba(99,102,241,.7)', borderColor: color || 'rgba(99,102,241,1)', borderWidth: 1 }]
-    },
-    options: { ...CHART_DEFAULTS, plugins: { legend: { display: false } } }
-  });
+// JS helper: smart size formatting
+function smartSize(v) {
+  if (v === null || v === undefined) return '—';
+  if (v >= 1000) return (v/1000).toFixed(2) + ' TB';
+  return v.toFixed(1) + ' GB';
 }
 
-// Top Shows by Size
-new Chart(document.getElementById('topShowsChart'), {
-  type: 'bar',
-  data: {
-    labels: {{ charts.top_shows.labels | tojson }},
-    datasets: [{
-      data: {{ charts.top_shows.data | tojson }},
-      backgroundColor: {{ charts.top_shows.colors | tojson }},
-    }]
-  },
-  options: {
-    indexAxis: 'y',
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color: '#aaa' }, grid: { color: '#222' }, title: { display: true, text: 'GB', color: '#aaa' } },
-      y: { ticks: { color: '#ccc', font: { size: 11 } }, grid: { display: false } }
-    }
-  }
-});
-
-// Top Movies by Size
-new Chart(document.getElementById('topMoviesChart'), {
-  type: 'bar',
-  data: {
-    labels: {{ charts.top_movies.labels | tojson }},
-    datasets: [{
-      data: {{ charts.top_movies.data | tojson }},
-      backgroundColor: {{ charts.top_movies.colors | tojson }},
-    }]
-  },
-  options: {
-    indexAxis: 'y',
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color: '#aaa' }, grid: { color: '#222' }, title: { display: true, text: 'GB', color: '#aaa' } },
-      y: { ticks: { color: '#ccc', font: { size: 11 } }, grid: { display: false } }
-    }
-  }
-});
-
-// Deletion Buckets Donut
-new Chart(document.getElementById('deletionBucketsChart'), {
-  type: 'doughnut',
-  data: {
-    labels: {{ charts.deletion_buckets.labels | tojson }},
-    datasets: [{
-      data: {{ charts.deletion_buckets.data | tojson }},
-      backgroundColor: {{ charts.deletion_buckets.colors | tojson }},
-    }]
-  },
-  options: {
-    plugins: {
-      legend: { position: 'bottom', labels: { color: '#ccc' } },
-      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toFixed(1)} GB` } }
-    }
-  }
-});
-
-barChart('chartRequester', {{ charts.requester.labels | tojson }}, {{ charts.requester.data | tojson }}, 'rgba(245,158,11,.75)');
-
+// ── Section 2: Storage Growth ──
 {% if charts.growth.labels %}
-new Chart(document.getElementById('chartGrowth'), {
-  type: 'line',
+(function(){
+  const tvData = {{ charts.growth.tv | tojson }};
+  const movieData = {{ charts.growth.movie | tojson }};
+  const maxVal = Math.max(...tvData, ...movieData, 1);
+  new Chart(document.getElementById('chartGrowth'), {
+    type: 'line',
+    data: {
+      labels: {{ charts.growth.labels | tojson }},
+      datasets: [
+        { label:'TV', data:tvData, borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,.1)', fill:true, tension:.3 },
+        { label:'Movies', data:movieData, borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.1)', fill:true, tension:.3 },
+      ]
+    },
+    options: {
+      responsive:true,
+      plugins:{ legend:{ labels:{ color:'#8892aa' } } },
+      scales:{
+        x:{ ticks:{ color:'#8892aa', maxTicksLimit:8 }, grid:{ color:'#2e3855' } },
+        y:{ min:0, suggestedMax: maxVal*1.15, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } }
+      }
+    }
+  });
+})();
+{% endif %}
+
+// Watched vs Unwatched
+new Chart(document.getElementById('chartWatchedUnwatched'), {
+  type:'doughnut',
+  data:{ labels:{{ charts.watched_unwatched.labels | tojson }}, datasets:[{ data:{{ charts.watched_unwatched.data | tojson }}, backgroundColor:{{ charts.watched_unwatched.colors | tojson }} }] },
+  options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#ccc' } }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${smartSize(ctx.parsed)}` } } } }
+});
+
+// Deletion Buckets
+new Chart(document.getElementById('deletionBucketsChart'), {
+  type:'doughnut',
+  data:{ labels:{{ charts.deletion_buckets.labels | tojson }}, datasets:[{ data:{{ charts.deletion_buckets.data | tojson }}, backgroundColor:{{ charts.deletion_buckets.colors | tojson }} }] },
+  options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#ccc' } }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${smartSize(ctx.parsed)}` } } } }
+});
+
+// By Requester
+new Chart(document.getElementById('chartRequester'), {
+  type:'bar',
+  data:{ labels:{{ charts.requester.labels | tojson }}, datasets:[{ data:{{ charts.requester.data | tojson }}, backgroundColor:'rgba(245,158,11,.75)' }] },
+  options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ color:'#8892aa' }, grid:{ color:'#2e3855' } }, y:{ ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } } } }
+});
+
+// ── Section 3: Storage Breakdown ──
+// Dynamic height helper
+function setCanvasHeight(id, count) {
+  const el = document.getElementById(id);
+  if (el) el.style.height = Math.max(300, count * 28) + 'px';
+}
+
+// Top Shows
+setCanvasHeight('topShowsChart', {{ charts.top_shows.labels | length }});
+new Chart(document.getElementById('topShowsChart'), {
+  type:'bar',
+  data:{ labels:{{ charts.top_shows.labels | tojson }}, datasets:[{ data:{{ charts.top_shows.data | tojson }}, backgroundColor:{{ charts.top_shows.colors | tojson }} }] },
+  options:{ indexAxis:'y', responsive:true, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ color:'#aaa', callback: v => smartSize(v) }, grid:{ color:'#222' } }, y:{ ticks:{ color:'#ccc', font:{ size:11 }, autoSkip:false }, grid:{ display:false } } } }
+});
+
+// Top Movies
+setCanvasHeight('topMoviesChart', {{ charts.top_movies.labels | length }});
+new Chart(document.getElementById('topMoviesChart'), {
+  type:'bar',
+  data:{ labels:{{ charts.top_movies.labels | tojson }}, datasets:[{ data:{{ charts.top_movies.data | tojson }}, backgroundColor:{{ charts.top_movies.colors | tojson }} }] },
+  options:{ indexAxis:'y', responsive:true, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ color:'#aaa', callback: v => smartSize(v) }, grid:{ color:'#222' } }, y:{ ticks:{ color:'#ccc', font:{ size:11 }, autoSkip:false }, grid:{ display:false } } } }
+});
+
+// TV Seasons
+{% if charts.tv_top_seasons.labels %}
+setCanvasHeight('chartTvSeasons', {{ charts.tv_top_seasons.labels | length }});
+new Chart(document.getElementById('chartTvSeasons'), {
+  type:'bar',
+  data:{ labels:{{ charts.tv_top_seasons.labels | tojson }}, datasets:[{ data:{{ charts.tv_top_seasons.data | tojson }}, backgroundColor:{{ charts.tv_top_seasons.colors | tojson }} }] },
+  options:{ indexAxis:'y', responsive:true, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ color:'#aaa', callback: v => smartSize(v) }, grid:{ color:'#222' } }, y:{ ticks:{ color:'#ccc', font:{ size:11 }, autoSkip:false }, grid:{ display:false } } } }
+});
+{% endif %}
+
+// Quality donuts
+new Chart(document.getElementById('chartQualityTv'), {
+  type:'doughnut',
+  data:{ labels:{{ charts.quality_tv.labels | tojson }}, datasets:[{ data:{{ charts.quality_tv.data | tojson }}, backgroundColor:{{ charts.quality_tv.colors | tojson }} }] },
+  options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#ccc' } }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${smartSize(ctx.parsed)}` } } } }
+});
+new Chart(document.getElementById('chartQualityMovie'), {
+  type:'doughnut',
+  data:{ labels:{{ charts.quality_movie.labels | tojson }}, datasets:[{ data:{{ charts.quality_movie.data | tojson }}, backgroundColor:{{ charts.quality_movie.colors | tojson }} }] },
+  options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#ccc' } }, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${smartSize(ctx.parsed)}` } } } }
+});
+
+// ── Section 4: Library Analysis ──
+
+// Content Age vs Watch scatter
+(function(){
+  const raw = {{ content_age_scatter | tojson }};
+  const watched = raw.filter(d => d.any_watched).map(d => ({
+    x: d.days_since_added,
+    y: d.size_gb,
+    r: Math.max(4, d.deletion_score / 10),
+    title: d.title,
+    slug: d.slug,
+    type: d.type,
+    score: d.deletion_score,
+  }));
+  const unwatched = raw.filter(d => !d.any_watched).map(d => ({
+    x: d.days_since_added,
+    y: d.size_gb,
+    r: Math.max(4, d.deletion_score / 10),
+    title: d.title,
+    slug: d.slug,
+    type: d.type,
+    score: d.deletion_score,
+  }));
+  const scatterChart = new Chart(document.getElementById('chartAgeScatter'), {
+    type: 'bubble',
+    data: {
+      datasets: [
+        { label: 'Watched', data: watched, backgroundColor: 'rgba(82,160,224,0.55)', borderColor: '#52a0e0', borderWidth: 1 },
+        { label: 'Unwatched', data: unwatched, backgroundColor: 'rgba(224,82,82,0.55)', borderColor: '#e05252', borderWidth: 1 },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#8892aa' } },
+        tooltip: { callbacks: { label: ctx => {
+          const d = ctx.raw;
+          return ` ${d.title} · ${smartSize(d.y)} · ${d.x}d old · score ${d.score}`;
+        }}}
+      },
+      scales: {
+        x: { title: { display:true, text:'Days Since Added', color:'#8892aa' }, ticks: { color:'#8892aa' }, grid: { color:'#2e3855' } },
+        y: { title: { display:true, text:'Size', color:'#8892aa' }, min:0, ticks: { color:'#8892aa', callback: v => smartSize(v) }, grid: { color:'#2e3855' } }
+      },
+      onClick: (e, els) => {
+        if (!els.length) return;
+        const pt = els[0];
+        const ds = scatterChart.data.datasets[pt.datasetIndex].data[pt.index];
+        window.location.href = '/' + (ds.type === 'show' ? 'tv' : 'movies') + '/' + ds.slug + '/';
+      }
+    }
+  });
+})();
+
+// Content Age Histogram
+new Chart(document.getElementById('chartContentAge'), {
+  type: 'bar',
   data: {
-    labels: {{ charts.growth.labels | tojson }},
+    labels: {{ charts.content_age.labels | tojson }},
     datasets: [
-      { label: 'TV', data: {{ charts.growth.tv | tojson }}, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.1)', fill: true, tension: .3 },
-      { label: 'Movies', data: {{ charts.growth.movie | tojson }}, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', fill: true, tension: .3 },
+      { label:'TV', data:{{ charts.content_age.tv | tojson }}, backgroundColor:'rgba(99,102,241,.7)' },
+      { label:'Movies', data:{{ charts.content_age.movie | tojson }}, backgroundColor:'rgba(245,158,11,.7)' },
     ]
   },
   options: {
-    responsive: true,
-    plugins: { legend: { labels: { color: '#8892aa' } } },
-    scales: {
-      x: { ticks: { color: '#8892aa', maxTicksLimit: 8 }, grid: { color: '#2e3855' } },
-      y: { ticks: { color: '#8892aa', callback: v => v + ' GB' }, grid: { color: '#2e3855' } }
+    responsive:true,
+    plugins:{ legend:{ labels:{ color:'#8892aa' } } },
+    scales:{
+      x:{ stacked:true, ticks:{ color:'#8892aa' }, grid:{ color:'#2e3855' } },
+      y:{ stacked:true, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } }
     }
   }
 });
-{% endif %}
+
+// Resolution × Codec — TV
+new Chart(document.getElementById('chartResCodecTv'), {
+  type:'bar',
+  data:{ labels:{{ charts.resolution_codec_tv.labels | tojson }}, datasets:{{ charts.resolution_codec_tv.datasets | tojson }} },
+  options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#8892aa' } } }, scales:{ x:{ stacked:true, ticks:{ color:'#8892aa' }, grid:{ color:'#2e3855' } }, y:{ stacked:true, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } } } }
+});
+
+// Resolution × Codec — Movies
+new Chart(document.getElementById('chartResCodecMovie'), {
+  type:'bar',
+  data:{ labels:{{ charts.resolution_codec_movie.labels | tojson }}, datasets:{{ charts.resolution_codec_movie.datasets | tojson }} },
+  options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#8892aa' } } }, scales:{ x:{ stacked:true, ticks:{ color:'#8892aa' }, grid:{ color:'#2e3855' } }, y:{ stacked:true, ticks:{ color:'#8892aa', callback: v => smartSize(v) }, grid:{ color:'#2e3855' } } } }
+});
+
 </script>
 {% endblock %}

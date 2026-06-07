@@ -6,16 +6,16 @@
 {% block title %}Free Space — Media Manager{% endblock %}
 
 {% macro actions(item_id, title, season_number=none) %}
-<td style="text-align:right;white-space:nowrap" data-row>
-  <button class="btn btn-orange" data-action="schedule"
+<td class="actions-cell" data-row>
+  <button class="btn btn-schedule" data-action="schedule"
           data-item-id="{{ item_id }}" data-title="{{ title }}"
           {% if season_number is not none %}data-season="{{ season_number }}"{% endif %}>
     Delete in 2 Weeks
   </button>
-  <button class="btn btn-danger" data-action="delete-now"
+  <button class="btn btn-destroy solid" data-action="delete-now"
           data-item-id="{{ item_id }}" data-title="{{ title }}"
           {% if season_number is not none %}data-season="{{ season_number }}"{% endif %}>
-    Delete Immediately
+    Delete Now
   </button>
 </td>
 {% endmacro %}
@@ -35,7 +35,13 @@
   <div class="table-card">
     <div class="table-card-title">Movies — {{ movie_recovery_gb }} GB recoverable</div>
     {% if movie_candidates %}
-    <table class="data-table">
+    <table class="data-table candidate-table">
+      <colgroup>
+        <col style="width:33%">
+        <col style="width:16%">
+        <col style="width:17%">
+        <col style="width:34%">
+      </colgroup>
       <thead>
         <tr>
           <th>Title</th>
@@ -66,7 +72,13 @@
   <div class="table-card">
     <div class="table-card-title">TV Series — {{ show_recovery_gb }} GB recoverable</div>
     {% if show_candidates %}
-    <table class="data-table">
+    <table class="data-table candidate-table">
+      <colgroup>
+        <col style="width:33%">
+        <col style="width:16%">
+        <col style="width:17%">
+        <col style="width:34%">
+      </colgroup>
       <thead>
         <tr>
           <th>Title</th>
@@ -98,7 +110,14 @@
     <div class="table-card-title">TV Seasons — {{ season_recovery_gb }} GB recoverable</div>
     <p style="padding:12px 20px 0;color:var(--text-muted);font-size:.8rem">Granular candidates — individual seasons worth clearing even when the show as a whole isn't.</p>
     {% if season_candidates %}
-    <table class="data-table">
+    <table class="data-table candidate-table">
+      <colgroup>
+        <col style="width:25%">
+        <col style="width:8%">
+        <col style="width:16%">
+        <col style="width:17%">
+        <col style="width:34%">
+      </colgroup>
       <thead>
         <tr>
           <th>Show</th>
@@ -135,7 +154,7 @@
 {# ── Confirm modal for "Delete Immediately" ── #}
 <div id="delete-modal">
   <div class="table-card" style="max-width:420px;width:90%;margin:0">
-    <div class="table-card-title" style="color:var(--red)">Delete Immediately?</div>
+    <div class="table-card-title" style="color:#c0392b">Delete Immediately?</div>
     <div style="padding:18px 20px">
       <p id="delete-modal-text" style="font-size:.92rem;line-height:1.5"></p>
       <p style="font-size:.8rem;color:var(--text-muted);margin-top:10px">
@@ -143,7 +162,7 @@
       </p>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
         <button class="btn btn-ghost" id="delete-modal-cancel" style="margin-left:0">Cancel</button>
-        <button class="btn btn-danger solid" id="delete-modal-confirm" style="margin-left:0">Confirm</button>
+        <button class="btn btn-destroy solid" id="delete-modal-confirm" style="margin-left:0">Confirm</button>
       </div>
     </div>
   </div>
@@ -157,6 +176,21 @@
     background: rgba(10,12,20,.7); align-items: center; justify-content: center;
   }
   #delete-modal.open { display: flex; }
+
+  /* candidate tables */
+  .candidate-table { table-layout: fixed; }
+  .candidate-table td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actions-cell { text-align: right; white-space: nowrap; }
+
+  /* schedule CTA — soft indigo outline */
+  .btn-schedule { border-color: var(--accent); color: var(--accent); }
+  .btn-schedule:hover:not(:disabled) { background: rgba(99,102,241,.12); }
+
+  /* destroy CTA — deep red */
+  .btn-destroy { border-color: #c0392b; color: #c0392b; }
+  .btn-destroy:hover:not(:disabled) { background: rgba(192,57,43,.12); }
+  .btn-destroy.solid { background: #c0392b; border-color: #c0392b; color: #fff; }
+  .btn-destroy.solid:hover:not(:disabled) { background: #a93226; }
 </style>
 <script>
 (function() {
@@ -227,8 +261,8 @@
   function restoreButtons(row, itemId, season, title) {
     const seasonAttr = season !== null && season !== undefined ? `data-season="${season}"` : '';
     row.innerHTML = `
-      <button class="btn btn-orange" data-action="schedule" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete in 2 Weeks</button>
-      <button class="btn btn-danger" data-action="delete-now" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete Immediately</button>
+      <button class="btn btn-schedule" data-action="schedule" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete in 2 Weeks</button>
+      <button class="btn btn-destroy solid" data-action="delete-now" data-item-id="${itemId}" ${seasonAttr} data-title="${title}">Delete Now</button>
     `;
   }
 

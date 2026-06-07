@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # Build and redeploy the media-manager app container.
 # Handles stuck/broken container states by killing via ID before removal.
+#
+# Flags:
+#   --fresh    Force --no-cache --pull (full rebuild, re-downloads everything)
+#   --pull     Pull the latest base image before building
 
 set -euo pipefail
+
+PULL=0; FRESH=0
+for arg in "$@"; do
+    [[ "$arg" == "--pull"  ]] && PULL=1
+    [[ "$arg" == "--fresh" ]] && FRESH=1 && PULL=1
+done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -60,9 +70,58 @@ run_quiet() {
         rm -f "$tmp"
     else
         spin_stop fail "$label"
-        echo
-        cat "$tmp"
+        echo; cat "$tmp"; rm -f "$tmp"
+        exit 1
+    fi
+}
+
+# ── Progress bar (for steps with known N/M progress) ─────────────────────────
+_bar() {
+    local n="$1" m="$2" width=24
+    local filled=$(( n * width / m ))
+    local empty=$(( width - filled ))
+    local bar=""
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+    local pct=$(( n * 100 / m ))
+    printf "[%s] %3d%%" "$bar" "$pct"
+}
+
+# run_build: runs a build command, shows a real progress bar using STEP N/M output
+run_build() {
+    local label="$1"; shift
+    local tmp; tmp=$(mktemp)
+
+    printf "  ${CYAN}…${RESET}  %s" "$label"
+
+    set +e
+    "$@" >"$tmp" 2>&1 &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        local last
+        last=$(grep -oiE 'step [0-9]+/[0-9]+' "$tmp" 2>/dev/null | tail -1)
+        if [[ -n "$last" ]]; then
+            local n m
+            n=$(echo "$last" | grep -oE '[0-9]+' | head -1)
+            m=$(echo "$last" | grep -oE '[0-9]+' | tail -1)
+            local bar; bar=$(_bar "$n" "$m")
+            printf "\r  ${CYAN}%s${RESET}  %s   " "$bar" "$label"
+        fi
+        sleep 0.3
+    done
+    wait "$pid"; local rc=$?
+    set -e
+
+    if [[ $rc -eq 0 ]]; then
+        local last; last=$(grep -oiE 'step [0-9]+/[0-9]+' "$tmp" 2>/dev/null | tail -1)
+        local m=1
+        [[ -n "$last" ]] && m=$(echo "$last" | grep -oE '[0-9]+' | tail -1)
+        local bar; bar=$(_bar "$m" "$m")
+        printf "\r  ${GREEN}%s${RESET}  %s  ${GREEN}✓${RESET}\n" "$bar" "$label"
         rm -f "$tmp"
+    else
+        printf "\r\033[K  ${RED}✗${RESET}  %s\n" "$label"
+        echo; cat "$tmp"; rm -f "$tmp"
         exit 1
     fi
 }
@@ -84,7 +143,6 @@ echo -e "  ${DIM}─────────────────────
 step "Removing stale containers"
 spin_start "finding containers"
 
-# Find every container whose name contains "media-manager" (catches any variant)
 mapfile -t ids < <(podman ps -a --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
 
 spin_stop ok "found ${#ids[@]} container(s)"
@@ -92,49 +150,31 @@ spin_stop ok "found ${#ids[@]} container(s)"
 if [[ ${#ids[@]} -gt 0 ]]; then
     spin_start "killing and removing"
 
-    # Step 1: remove pods first — this cascades to infra + member containers
-    # and handles the "infra container cannot be removed without removing the pod" case.
-    # Must happen BEFORE any individual container rm attempts.
+    # Remove pods first — cascades to infra + member containers
     mapfile -t pod_ids < <(podman pod ls --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
     for pod_id in "${pod_ids[@]:-}"; do
         [[ -z "$pod_id" ]] && continue
-        podman pod rm -f "$pod_id" >/dev/null 2>&1 || true
+        timeout 10 podman pod rm -f "$pod_id" >/dev/null 2>&1 || true
     done
 
-    # Step 2: SIGKILL + rm any containers that weren't in a pod
-    for id in "${ids[@]}"; do
-        podman kill -s KILL "$id" >/dev/null 2>&1 || true
-    done
-    sleep 1
-    for id in "${ids[@]}"; do
-        podman rm -f "$id" >/dev/null 2>&1 || true
-    done
+    # SIGKILL + rm containers not in a pod (parallel, with timeouts)
+    printf '%s\n' "${ids[@]}" | xargs -r -P8 -I{} timeout 5  podman kill -s KILL {} >/dev/null 2>&1 || true
+    printf '%s\n' "${ids[@]}" | xargs -r -P8 -I{} timeout 10 podman rm -f      {} >/dev/null 2>&1 || true
 
-    # Step 3: escalate — some containers get stuck in "Stopping"/"Degraded" state
-    # where podman's own kill/rm can't reach the process (e.g. infra container
-    # blocked on a member that won't die). Find the real host PID for any
-    # survivors and SIGKILL it directly, then retry pod/container removal.
+    # Escalate: find host PIDs for any survivors and SIGKILL directly
     mapfile -t stuck_ids < <(podman ps -a --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
     if [[ ${#stuck_ids[@]} -gt 0 ]]; then
         for id in "${stuck_ids[@]}"; do
-            pid=$(podman inspect "$id" --format '{{.State.Pid}}' 2>/dev/null || true)
-            if [[ -n "$pid" && "$pid" != "0" ]]; then
-                kill -9 "$pid" >/dev/null 2>&1 || true
-            fi
+            pid=$(timeout 5 podman inspect "$id" --format '{{.State.Pid}}' 2>/dev/null || true)
+            [[ -n "$pid" && "$pid" != "0" ]] && kill -9 "$pid" 2>/dev/null || true
         done
-        sleep 2
 
-        # Retry pod removal first (cascades to infra + members)
         mapfile -t pod_ids < <(podman pod ls --filter "name=media-manager" --format '{{.ID}}' 2>/dev/null || true)
         for pod_id in "${pod_ids[@]:-}"; do
             [[ -z "$pod_id" ]] && continue
-            podman pod rm -f "$pod_id" >/dev/null 2>&1 || true
+            timeout 10 podman pod rm -f "$pod_id" >/dev/null 2>&1 || true
         done
-
-        # Then any remaining standalone containers
-        for id in "${stuck_ids[@]}"; do
-            podman rm -f "$id" >/dev/null 2>&1 || true
-        done
+        printf '%s\n' "${stuck_ids[@]}" | xargs -r -P8 -I{} timeout 10 podman rm -f {} >/dev/null 2>&1 || true
     fi
 
     spin_stop ok "removed containers and pods"
@@ -158,15 +198,18 @@ fi
 spin_stop ok "no conflicts"
 
 # ── Phase 2.5: Regenerate static site ────────────────────────────────────────
-# templates/*.html and assets/style.css are SOURCE files — the app actually
-# serves the pre-rendered pages in public/. Without this step, edits to
-# templates or styles silently won't appear after deploy.
 step "Regenerating site"
-run_quiet "rendering templates → public/" bash -c "cd '$ROOT' && . .venv/bin/activate && python scripts/run.py"
+run_quiet "rendering templates → public/" bash -c "cd '$ROOT' && . .venv/bin/activate && python scripts/run.py generate"
 
 # ── Phase 3: Build ────────────────────────────────────────────────────────────
 step "Building image"
-run_quiet "building image" $COMPOSE build --no-cache --pull
+if [[ $FRESH -eq 1 ]]; then
+    run_build "building image (fresh)" $COMPOSE build --no-cache --pull
+elif [[ $PULL -eq 1 ]]; then
+    run_build "building image" $COMPOSE build --pull
+else
+    run_build "building image" $COMPOSE build
+fi
 
 # ── Phase 4: Start ────────────────────────────────────────────────────────────
 step "Starting container"
@@ -179,8 +222,7 @@ spin_start "waiting for container to come up"
 ok_flag=0
 for i in $(seq 1 20); do
     if podman ps --filter "name=^media-manager$" --filter "status=running" --format '{{.ID}}' 2>/dev/null | grep -q .; then
-        ok_flag=1
-        break
+        ok_flag=1; break
     fi
     sleep 0.5
 done
@@ -197,5 +239,4 @@ else
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-PORT="${PORT:-10400}"
 echo -e "\n  ${GREEN}${BOLD}All done.${RESET}  Listening on port ${PORT}\n"

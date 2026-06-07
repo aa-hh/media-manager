@@ -66,7 +66,12 @@ def calculate(data_dir: Path, capacity_gb: float | None = None) -> dict:
     daily_growth = (newest - oldest) / days_span
     monthly_growth = round(daily_growth * 30.44, 2)
 
+    growth_gb_per_month = monthly_growth
+    if days_span < 7 or monthly_growth == 0.0:
+        growth_gb_per_month = None
+
     predicted_full = None
+    days_to_full = None
     if capacity_gb and daily_growth > 0:
         remaining = capacity_gb - newest
         days_to_full = remaining / daily_growth
@@ -74,8 +79,9 @@ def calculate(data_dir: Path, capacity_gb: float | None = None) -> dict:
 
     return {
         "snapshots": snapshots,
-        "growth_gb_per_month": monthly_growth,
+        "growth_gb_per_month": growth_gb_per_month,
         "predicted_full_date": predicted_full,
+        "days_until_full": round(days_to_full) if predicted_full is not None else None,
         "current_total_gb": newest,
         "capacity_gb": capacity_gb,
     }

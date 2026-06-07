@@ -171,7 +171,15 @@ def _make_env(templates_dir: Path) -> Environment:
                 c[g] += 1
         return [g for g, _ in c.most_common(n)]
 
+    def smart_size(val):
+        if val is None:
+            return "—"
+        if val >= 1000:
+            return f"{val/1000:.2f} TB"
+        return f"{val:.1f} GB"
+
     env.filters["gb"] = gb
+    env.filters["smart_size"] = smart_size
     env.filters["fmt_date"] = fmt_date
     env.filters["pct"] = pct
     env.globals["requester_label"] = requester_label
@@ -920,6 +928,155 @@ def _compute_buffer_analytics(db_path: Path) -> dict | None:
     }
 
 
+def _chart_data_tv_top_seasons(shows: list[dict], n: int = 20) -> dict:
+    seasons = []
+    for show in shows:
+        title = show.get("title", "")[:20]
+        for s in show.get("seasons", []):
+            if s.get("size_gb", 0) > 0:
+                seasons.append({
+                    "label": f"{title} S{s.get('season_number', '?')}",
+                    "size_gb": s.get("size_gb", 0),
+                    "deletion_rec": s.get("deletion", {}).get("recommendation", "keep"),
+                })
+    seasons.sort(key=lambda x: x["size_gb"], reverse=True)
+    seasons = seasons[:n]
+    return {
+        "labels": [s["label"] for s in seasons],
+        "data": [round(s["size_gb"], 2) for s in seasons],
+        "colors": [_color_for_rec(s["deletion_rec"]) for s in seasons],
+    }
+
+
+def _chart_data_quality_by_type(items: list[dict]) -> dict:
+    def _norm_res(r):
+        r = (r or "").lower().strip()
+        if r in ("4k", "2160p", "2160"): return "4K"
+        if r in ("1080p", "1080"): return "1080p"
+        if r in ("720p", "720"): return "720p"
+        return "Other"
+    buckets = {"4K": 0.0, "1080p": 0.0, "720p": 0.0, "Other": 0.0}
+    for item in items:
+        res = _norm_res((item.get("file_info") or {}).get("resolution"))
+        buckets[res] += item.get("size_gb", 0)
+    labels = ["4K", "1080p", "720p", "Other"]
+    colors = ["#a78bfa", "#6366f1", "#60a5fa", "#64748b"]
+    return {
+        "labels": labels,
+        "data": [round(buckets[l], 2) for l in labels],
+        "colors": colors,
+    }
+
+
+def _chart_data_watched_unwatched(items: list[dict]) -> dict:
+    watched = sum(i.get("size_gb", 0) for i in items if i.get("any_watched"))
+    unwatched = sum(i.get("size_gb", 0) for i in items if not i.get("any_watched"))
+    return {
+        "labels": ["Watched", "Unwatched"],
+        "data": [round(watched, 2), round(unwatched, 2)],
+        "colors": ["#52a0e0", "#e05252"],
+    }
+
+
+def _chart_data_content_age(items: list[dict]) -> dict:
+    from collections import defaultdict
+    tv_by_year: dict[int, float] = defaultdict(float)
+    movie_by_year: dict[int, float] = defaultdict(float)
+    for item in items:
+        added = item.get("added_at")
+        if not added:
+            continue
+        try:
+            year = int(added[:4])
+        except Exception:
+            continue
+        if item.get("type") == "show":
+            tv_by_year[year] += item.get("size_gb", 0)
+        else:
+            movie_by_year[year] += item.get("size_gb", 0)
+    all_years = sorted(set(tv_by_year) | set(movie_by_year))
+    return {
+        "labels": all_years,
+        "tv": [round(tv_by_year.get(y, 0), 2) for y in all_years],
+        "movie": [round(movie_by_year.get(y, 0), 2) for y in all_years],
+    }
+
+
+def _chart_data_resolution_codec(items: list[dict]) -> dict:
+    """Returns stacked bar data: resolution tiers × codec buckets."""
+    def _norm_res(r):
+        r = (r or "").lower().strip()
+        if r in ("4k", "2160p", "2160"): return "4K"
+        if r in ("1080p", "1080"): return "1080p"
+        if r in ("720p", "720"): return "720p"
+        return "Other"
+    def _norm_codec(c):
+        c = (c or "").lower()
+        if any(x in c for x in ("hevc", "h.265", "h265", "h265")): return "H.265"
+        if any(x in c for x in ("avc", "h.264", "h264", "h264")): return "H.264"
+        return "Other"
+    tiers = ["4K", "1080p", "720p", "Other"]
+    codecs = ["H.265", "H.264", "Other"]
+    from collections import defaultdict
+    buckets: dict[str, dict[str, float]] = {c: defaultdict(float) for c in codecs}
+    for item in items:
+        fi = item.get("file_info") or {}
+        res = _norm_res(fi.get("resolution"))
+        codec = _norm_codec(fi.get("video_codec"))
+        buckets[codec][res] += item.get("size_gb", 0)
+    codec_colors = {"H.265": "#52a0e0", "H.264": "#e0b252", "Other": "#64748b"}
+    return {
+        "labels": tiers,
+        "datasets": [
+            {
+                "label": c,
+                "data": [round(buckets[c][t], 2) for t in tiers],
+                "backgroundColor": codec_colors[c],
+            }
+            for c in codecs
+        ],
+    }
+
+
+def _build_content_age_scatter(items: list[dict]) -> list:
+    result = []
+    for item in items:
+        days = _days_since(item.get("added_at"))
+        if days is None:
+            continue
+        result.append({
+            "title": item.get("title", ""),
+            "slug": item.get("slug", ""),
+            "type": item.get("type", "movie"),
+            "size_gb": round(item.get("size_gb", 0), 2),
+            "days_since_added": days,
+            "any_watched": bool(item.get("any_watched")),
+            "deletion_score": round(item.get("deletion", {}).get("score", 0)),
+        })
+    return result[:200]
+
+
+def _compute_codec_efficiency(items: list[dict]) -> dict:
+    h264_gb = 0.0
+    h265_gb = 0.0
+    other_gb = 0.0
+    for item in items:
+        codec = ((item.get("file_info") or {}).get("video_codec") or "").lower()
+        gb = item.get("size_gb", 0)
+        if any(x in codec for x in ("avc", "h.264", "h264")):
+            h264_gb += gb
+        elif any(x in codec for x in ("hevc", "h.265", "h265")):
+            h265_gb += gb
+        else:
+            other_gb += gb
+    return {
+        "h264_gb": round(h264_gb, 2),
+        "h265_gb": round(h265_gb, 2),
+        "other_gb": round(other_gb, 2),
+        "estimated_savings_gb": round(h264_gb * 0.45, 2),
+    }
+
+
 def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None, db_path: Path | None = None):
     all_items = shows + movies
     total_tv_gb = sum(s["size_gb"] for s in shows)
@@ -975,12 +1132,23 @@ def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None,
         "most_active_user": most_active_user,
         "most_requested_user": most_requested_user,
         "forecast": forecast,
+        "remaining_gb": round(forecast.get("capacity_gb") - total_gb, 1) if forecast.get("capacity_gb") else None,
+        "days_until_full": forecast.get("days_until_full"),
+        "codec_efficiency": _compute_codec_efficiency(all_items),
+        "content_age_scatter": _build_content_age_scatter(all_items),
         "charts": {
             "top_shows": _chart_data_top_shows_by_size(shows),
             "top_movies": _chart_data_top_movies_by_size(movies),
             "deletion_buckets": _chart_data_storage_by_deletion(all_items),
             "requester": _chart_data_storage_by_requester(all_items),
             "growth": _chart_data_growth(forecast.get("snapshots", [])),
+            "tv_top_seasons": _chart_data_tv_top_seasons(shows),
+            "quality_tv": _chart_data_quality_by_type(shows),
+            "quality_movie": _chart_data_quality_by_type(movies),
+            "watched_unwatched": _chart_data_watched_unwatched(all_items),
+            "content_age": _chart_data_content_age(all_items),
+            "resolution_codec_tv": _chart_data_resolution_codec(shows),
+            "resolution_codec_movie": _chart_data_resolution_codec(movies),
         },
         "treemap_data": [
             {
@@ -989,6 +1157,7 @@ def _build_dashboard_context(shows, movies, users, forecast, watchlist_ids=None,
                 "type": item["type"],
                 "slug": item.get("slug", ""),
                 "deletion_score": round(item.get("deletion", {}).get("score", 0)),
+                "deletion_rec": item.get("deletion", {}).get("recommendation", "keep"),
                 "total_plays": item.get("total_plays", 0),
             }
             for item in sorted(all_items, key=lambda x: x.get("size_gb", 0), reverse=True)

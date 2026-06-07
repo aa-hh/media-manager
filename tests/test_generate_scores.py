@@ -13,6 +13,13 @@ from generate import (
     _chart_data_growth,
     _build_sparkline_points,
     _make_env,
+    _chart_data_tv_top_seasons,
+    _chart_data_quality_by_type,
+    _chart_data_watched_unwatched,
+    _chart_data_content_age,
+    _chart_data_resolution_codec,
+    _build_content_age_scatter,
+    _compute_codec_efficiency,
 )
 from datetime import datetime, timedelta, timezone
 
@@ -372,3 +379,283 @@ def test_top_genres_limits_to_n():
     fn = globals_["top_genres"]
     items = [{"genres": [f"G{i}"]} for i in range(10)]
     assert len(fn(items, n=3)) == 3
+
+
+# ── smart_size filter ─────────────────────────────────────────────────────────
+
+def test_smart_size_none_returns_dash():
+    _, filters = _env_globals()
+    assert filters["smart_size"](None) == "—"
+
+def test_smart_size_below_1000_returns_gb():
+    _, filters = _env_globals()
+    assert filters["smart_size"](500) == "500.0 GB"
+
+def test_smart_size_above_1000_returns_tb():
+    _, filters = _env_globals()
+    assert filters["smart_size"](2369.31) == "2.37 TB"
+
+def test_smart_size_exactly_1000():
+    _, filters = _env_globals()
+    assert filters["smart_size"](1000) == "1.00 TB"
+
+
+# ── _chart_data_tv_top_seasons ────────────────────────────────────────────────
+
+def _make_show(title, seasons):
+    return {
+        "title": title,
+        "seasons": [
+            {"season_number": s, "size_gb": gb, "deletion": {"recommendation": rec}}
+            for s, gb, rec in seasons
+        ]
+    }
+
+def test_tv_top_seasons_sorted_by_size():
+    shows = [
+        _make_show("Alpha", [(1, 10.0, "keep"), (2, 50.0, "suggest_delete")]),
+        _make_show("Beta", [(1, 30.0, "strong_delete")]),
+    ]
+    result = _chart_data_tv_top_seasons(shows)
+    assert result["data"][0] == 50.0
+    assert "S2" in result["labels"][0]
+    assert result["data"] == sorted(result["data"], reverse=True)
+
+def test_tv_top_seasons_respects_n_limit():
+    shows = [_make_show("X", [(i, float(i*10), "keep") for i in range(1, 6)])]
+    result = _chart_data_tv_top_seasons(shows, n=3)
+    assert len(result["labels"]) == 3
+
+def test_tv_top_seasons_skips_zero_size_seasons():
+    shows = [_make_show("Y", [(1, 0.0, "keep"), (2, 20.0, "keep")])]
+    result = _chart_data_tv_top_seasons(shows)
+    assert len(result["labels"]) == 1
+
+def test_tv_top_seasons_colors_match_deletion_rec():
+    shows = [_make_show("Z", [(1, 10.0, "strong_delete")])]
+    result = _chart_data_tv_top_seasons(shows)
+    assert result["colors"][0] == "#e05252"
+
+def test_tv_top_seasons_label_format():
+    shows = [_make_show("ShowName", [(3, 15.0, "keep")])]
+    result = _chart_data_tv_top_seasons(shows)
+    assert result["labels"][0] == "ShowName S3"
+
+
+# ── _chart_data_quality_by_type ───────────────────────────────────────────────
+
+def _make_item_with_res(res, gb, itype="movie"):
+    return {"file_info": {"resolution": res}, "size_gb": gb, "type": itype}
+
+def test_quality_by_type_normalizes_resolutions():
+    items = [
+        _make_item_with_res("4K", 10),
+        _make_item_with_res("2160p", 5),
+        _make_item_with_res("1080p", 20),
+        _make_item_with_res("1080", 3),
+        _make_item_with_res("720p", 8),
+        _make_item_with_res("unknown_res", 2),
+    ]
+    result = _chart_data_quality_by_type(items)
+    labels = result["labels"]
+    data = result["data"]
+    assert data[labels.index("4K")] == 15.0
+    assert data[labels.index("1080p")] == 23.0
+    assert data[labels.index("720p")] == 8.0
+    assert data[labels.index("Other")] == 2.0
+
+def test_quality_by_type_empty_items():
+    result = _chart_data_quality_by_type([])
+    assert all(d == 0 for d in result["data"])
+
+def test_quality_by_type_missing_file_info():
+    items = [{"size_gb": 10, "type": "movie"}]  # no file_info
+    result = _chart_data_quality_by_type(items)
+    labels = result["labels"]
+    assert result["data"][labels.index("Other")] == 10.0
+
+
+# ── _chart_data_watched_unwatched ─────────────────────────────────────────────
+
+def test_watched_unwatched_sums_correctly():
+    items = [
+        {"any_watched": True, "size_gb": 10},
+        {"any_watched": True, "size_gb": 5},
+        {"any_watched": False, "size_gb": 20},
+    ]
+    result = _chart_data_watched_unwatched(items)
+    assert result["data"][0] == 15.0
+    assert result["data"][1] == 20.0
+
+def test_watched_unwatched_all_watched():
+    items = [{"any_watched": True, "size_gb": 10}]
+    result = _chart_data_watched_unwatched(items)
+    assert result["data"][1] == 0.0
+
+def test_watched_unwatched_labels():
+    result = _chart_data_watched_unwatched([])
+    assert result["labels"] == ["Watched", "Unwatched"]
+
+
+# ── _chart_data_content_age ───────────────────────────────────────────────────
+
+def test_content_age_groups_by_year():
+    items = [
+        {"added_at": "2022-06-01T00:00:00Z", "size_gb": 10, "type": "show"},
+        {"added_at": "2022-11-01T00:00:00Z", "size_gb": 5, "type": "movie"},
+        {"added_at": "2023-01-01T00:00:00Z", "size_gb": 20, "type": "show"},
+    ]
+    result = _chart_data_content_age(items)
+    assert 2022 in result["labels"]
+    assert 2023 in result["labels"]
+    idx22 = result["labels"].index(2022)
+    assert result["tv"][idx22] == 10.0
+    assert result["movie"][idx22] == 5.0
+
+def test_content_age_skips_missing_added_at():
+    items = [
+        {"size_gb": 10, "type": "movie"},  # no added_at
+        {"added_at": "2023-01-01T00:00:00Z", "size_gb": 5, "type": "movie"},
+    ]
+    result = _chart_data_content_age(items)
+    assert len(result["labels"]) == 1
+
+def test_content_age_labels_are_sorted():
+    items = [
+        {"added_at": "2023-01-01T00:00:00Z", "size_gb": 1, "type": "movie"},
+        {"added_at": "2021-01-01T00:00:00Z", "size_gb": 1, "type": "movie"},
+        {"added_at": "2022-01-01T00:00:00Z", "size_gb": 1, "type": "movie"},
+    ]
+    result = _chart_data_content_age(items)
+    assert result["labels"] == sorted(result["labels"])
+
+
+# ── _chart_data_resolution_codec ──────────────────────────────────────────────
+
+def _make_codec_item(codec, res, gb):
+    return {"file_info": {"video_codec": codec, "resolution": res}, "size_gb": gb}
+
+def test_resolution_codec_structure():
+    result = _chart_data_resolution_codec([])
+    assert result["labels"] == ["4K", "1080p", "720p", "Other"]
+    assert len(result["datasets"]) == 3
+    labels = [d["label"] for d in result["datasets"]]
+    assert "H.265" in labels
+    assert "H.264" in labels
+    assert "Other" in labels
+
+def test_resolution_codec_buckets_correctly():
+    items = [_make_codec_item("H.265", "4K", 100)]
+    result = _chart_data_resolution_codec(items)
+    h265_ds = next(d for d in result["datasets"] if d["label"] == "H.265")
+    assert h265_ds["data"][0] == 100.0  # index 0 = 4K
+
+def test_resolution_codec_normalizes_codec_strings():
+    items = [
+        _make_codec_item("hevc", "1080p", 10),
+        _make_codec_item("HEVC", "1080p", 10),
+        _make_codec_item("avc", "720p", 5),
+        _make_codec_item("H.264", "720p", 5),
+        _make_codec_item("ProRes", "4K", 8),
+    ]
+    result = _chart_data_resolution_codec(items)
+    h265 = next(d for d in result["datasets"] if d["label"] == "H.265")
+    h264 = next(d for d in result["datasets"] if d["label"] == "H.264")
+    other = next(d for d in result["datasets"] if d["label"] == "Other")
+    assert h265["data"][1] == 20.0   # 1080p index
+    assert h264["data"][2] == 10.0   # 720p index
+    assert other["data"][0] == 8.0   # 4K index
+
+def test_resolution_codec_empty_items():
+    result = _chart_data_resolution_codec([])
+    for ds in result["datasets"]:
+        assert ds["data"] == [0, 0, 0, 0]
+
+
+# ── _build_content_age_scatter ────────────────────────────────────────────────
+
+def _make_scatter_item(days_ago, size_gb, watched=False, score=0, itype="movie"):
+    from datetime import datetime, timedelta, timezone
+    added = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    return {
+        "added_at": added,
+        "size_gb": size_gb,
+        "type": itype,
+        "slug": "test-slug",
+        "title": "Test",
+        "any_watched": watched,
+        "deletion": {"score": score},
+    }
+
+def test_content_age_scatter_basic_fields():
+    items = [_make_scatter_item(30, 10, watched=True, score=45)]
+    result = _build_content_age_scatter(items)
+    assert len(result) == 1
+    r = result[0]
+    assert "title" in r and "slug" in r and "type" in r
+    assert "size_gb" in r and "days_since_added" in r
+    assert "any_watched" in r and "deletion_score" in r
+    assert r["any_watched"] is True
+    assert r["deletion_score"] == 45
+
+def test_content_age_scatter_skips_missing_added_at():
+    items = [
+        {"size_gb": 10, "type": "movie", "slug": "x", "title": "X", "any_watched": False, "deletion": {}},
+        _make_scatter_item(10, 5),
+    ]
+    result = _build_content_age_scatter(items)
+    assert len(result) == 1
+
+def test_content_age_scatter_respects_200_limit():
+    items = [_make_scatter_item(i, 1) for i in range(250)]
+    result = _build_content_age_scatter(items)
+    assert len(result) == 200
+
+def test_content_age_scatter_days_since_added_is_nonneg_int():
+    items = [_make_scatter_item(15, 10)]
+    result = _build_content_age_scatter(items)
+    assert isinstance(result[0]["days_since_added"], int)
+    assert result[0]["days_since_added"] >= 0
+
+
+# ── _compute_codec_efficiency ─────────────────────────────────────────────────
+
+def _item_with_codec(codec, gb):
+    return {"file_info": {"video_codec": codec}, "size_gb": gb}
+
+def test_codec_efficiency_h264_bucket():
+    items = [_item_with_codec("H.264", 100)]
+    result = _compute_codec_efficiency(items)
+    assert result["h264_gb"] == 100.0
+    assert result["h265_gb"] == 0.0
+
+def test_codec_efficiency_h265_bucket():
+    items = [_item_with_codec("HEVC", 80)]
+    result = _compute_codec_efficiency(items)
+    assert result["h265_gb"] == 80.0
+    assert result["h264_gb"] == 0.0
+
+def test_codec_efficiency_other_bucket():
+    items = [_item_with_codec("ProRes", 30)]
+    result = _compute_codec_efficiency(items)
+    assert result["other_gb"] == 30.0
+
+def test_codec_efficiency_estimated_savings_is_45pct_of_h264():
+    items = [_item_with_codec("H.264", 200)]
+    result = _compute_codec_efficiency(items)
+    assert result["estimated_savings_gb"] == round(200 * 0.45, 2)
+
+def test_codec_efficiency_case_insensitive():
+    items = [
+        _item_with_codec("avc", 50),
+        _item_with_codec("hevc", 40),
+        _item_with_codec("h.265", 10),
+    ]
+    result = _compute_codec_efficiency(items)
+    assert result["h264_gb"] == 50.0
+    assert result["h265_gb"] == 50.0
+
+def test_codec_efficiency_missing_file_info():
+    items = [{"size_gb": 10}]
+    result = _compute_codec_efficiency(items)
+    assert result["other_gb"] == 10.0
