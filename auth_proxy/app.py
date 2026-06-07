@@ -905,7 +905,7 @@ async def setup_test_service(request: Request):
     key = body.get("key", "")
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=8) as client:
+        async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=True) as client:
             if service in ("sonarr", "radarr"):
                 r = await client.get(f"{url}/api/v3/system/status", params={"apikey": key})
                 r.raise_for_status()
@@ -950,30 +950,30 @@ async def setup_test_service(request: Request):
             elif service in ("tracker-blutopia", "tracker-beyondhd"):
                 username = body.get("username", "").strip()
                 if username:
-                    # Full test: fetch user profile for ratio/stats
                     r = await client.get(
                         f"{url.rstrip('/')}/api/user/{username}",
                         params={"api_token": key},
                     )
-                    if r.status_code == 401:
-                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
-                    if r.status_code == 404:
-                        return JSONResponse({"ok": False, "error": "User not found — check username"}, status_code=200)
-                    r.raise_for_status()
+                else:
+                    r = await client.get(
+                        f"{url.rstrip('/')}/api/torrents",
+                        params={"api_token": key, "perPage": 1},
+                    )
+                if r.status_code == 401:
+                    return JSONResponse({"ok": False, "error": "Invalid API key (401)"}, status_code=200)
+                if r.status_code == 403:
+                    return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
+                if r.status_code == 404:
+                    return JSONResponse({"ok": False, "error": "User not found (404) — check username"}, status_code=200)
+                if not r.is_success:
+                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
+                if username:
                     data = r.json().get("data", {})
                     up = data.get("uploaded") or 0
                     dn = data.get("downloaded") or 1
                     ratio = round(up / dn, 3) if dn else None
                     return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
                 else:
-                    # Key-only test: validate API key is accepted
-                    r = await client.get(
-                        f"{url.rstrip('/')}/api/torrents",
-                        params={"api_token": key, "perPage": 1},
-                    )
-                    if r.status_code == 401:
-                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
-                    r.raise_for_status()
                     return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
             elif service == "tracker-privatehd":
                 # AvistaZ auth: POST credentials → bearer token → GET /api/v1/users/me
@@ -1004,9 +1004,13 @@ async def setup_test_service(request: Request):
                 return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
+    except httpx.ConnectError as e:
+        return JSONResponse({"ok": False, "error": f"Could not connect: {e}"}, status_code=200)
+    except httpx.TimeoutException:
+        return JSONResponse({"ok": False, "error": "Request timed out"}, status_code=200)
     except Exception as e:
-        print(f"Service test error: {e}")
-        return JSONResponse({"ok": False, "error": "Connection failed — check the URL and API key."}, status_code=200)
+        print(f"Service test error ({type(e).__name__}): {e}")
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"}, status_code=200)
 
 
 @app.post("/api/setup/plex-servers")
