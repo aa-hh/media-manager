@@ -3,6 +3,7 @@ Matches ruTorrent data to library items via Sonarr/Radarr download history.
 """
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -42,16 +43,42 @@ def _privatehd_buffer_hours(size_gb: float) -> float:
     return 24.0 + (size_gb / 5.0)
 
 
+def _slug(s: str) -> str:
+    """Normalize to alphanumeric lowercase, stripping TLD suffixes."""
+    # Remove common TLDs so "beyond-hd.me" and "BeyondHD" both slug to "beyondhd"
+    s = re.sub(r"\.(me|cc|to|com|net|org|io)\b", "", s.lower())
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
 def _find_rule(tracker: str, rules: dict) -> tuple[str, dict] | None:
-    """Match tracker hostname to a rule key (substring match for subdomains)."""
+    """Match tracker hostname or indexer name to a rule key.
+
+    Accepts both exact hostnames (e.g. 'beyond-hd.me') and Prowlarr-style
+    indexer names (e.g. 'BeyondHD (Prowlarr)') by comparing slugified forms.
+    """
     if not tracker:
         return None
+    tracker_slug = _slug(tracker)
     for key, rule in rules.items():
         if key.startswith("_"):
             continue
+        # Direct substring match (original behaviour)
         if key in tracker or tracker in key:
             return key, rule
+        # Slug-based match — handles "BeyondHD (Prowlarr)" ↔ "beyond-hd.me"
+        key_slug = _slug(key)
+        if len(key_slug) >= 5 and (key_slug in tracker_slug or tracker_slug in key_slug):
+            return key, rule
     return None
+
+
+def _indexer_to_tracker(indexer: str, rules: dict) -> str:
+    """Resolve a Prowlarr/Jackett indexer name to the canonical tracker hostname
+    used as a key in tracker_rules.json.  Returns '' if no match."""
+    if not indexer:
+        return ""
+    match = _find_rule(indexer, rules)
+    return match[0] if match else ""
 
 
 def _check_requirements(torrent: dict, rules: dict) -> dict | None:
@@ -144,18 +171,25 @@ def apply(data_dir: Path, config_dir: Path, shows: list[dict], movies: list[dict
     raw_accounts    = _load_json(data_dir / "raw_tracker_accounts.json", {})
     tracker_rules   = _load_tracker_rules(config_dir)
 
-    # hash → item_id (last-write wins; sonarr first so radarr can override for movies)
-    hash_to_item: dict[str, str] = {}
+    # hash → item_id  AND  hash → tracker hostname (from indexer name in history)
+    hash_to_item:    dict[str, str] = {}
+    hash_to_tracker: dict[str, str] = {}
     for entry in sonarr_history:
         dl = (entry.get("download_id") or "").upper().strip()
         sid = entry.get("sonarr_id")
         if dl and sid:
             hash_to_item[dl] = f"tv:{sid}"
+            t = _indexer_to_tracker(entry.get("indexer", ""), tracker_rules)
+            if t:
+                hash_to_tracker[dl] = t
     for entry in radarr_history:
         dl = (entry.get("download_id") or "").upper().strip()
         rid = entry.get("radarr_id")
         if dl and rid:
             hash_to_item[dl] = f"movie:{rid}"
+            t = _indexer_to_tracker(entry.get("indexer", ""), tracker_rules)
+            if t:
+                hash_to_tracker[dl] = t
 
     # Build item_id → best torrent (prefer seeding > stopped > others)
     torrent_map: dict[str, dict] = {}
@@ -164,6 +198,10 @@ def apply(data_dir: Path, config_dir: Path, shows: list[dict], movies: list[dict
         item_id = hash_to_item.get(h)
         if not item_id:
             continue
+        # If rTorrent didn't supply a tracker URL, fall back to the indexer
+        # name recorded in Sonarr/Radarr history.
+        if not t.get("tracker"):
+            t = {**t, "tracker": hash_to_tracker.get(h, "")}
         req = _check_requirements(t, tracker_rules)
 
         # Layer in global ratio check from tracker account data

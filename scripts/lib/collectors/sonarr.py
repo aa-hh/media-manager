@@ -61,7 +61,8 @@ def fetch_history(url: str, api_key: str) -> list[dict]:
                 dl_id     = (r.get("downloadId") or "").strip()
                 series_id = r.get("seriesId")
                 if dl_id and series_id:
-                    items.append({"download_id": dl_id.upper(), "sonarr_id": series_id})
+                    indexer = (r.get("data") or {}).get("indexer", "")
+                    items.append({"download_id": dl_id.upper(), "sonarr_id": series_id, "indexer": indexer})
             if len(records) < page_size:
                 break
             page += 1
