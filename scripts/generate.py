@@ -1440,7 +1440,7 @@ def render_all(
     watchlist_file = public_dir.parent / "data" / "watchlist.json"
     try:
         raw = json.loads(watchlist_file.read_text())
-        watchlist_ids = {(mt, tid) for mt, tid in raw}
+        watchlist_ids = {(entry[0], entry[1]) for entry in raw if len(entry) >= 2}
     except Exception:
         watchlist_ids = set()
 
