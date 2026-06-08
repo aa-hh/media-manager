@@ -1,0 +1,3 @@
+{"sessionId": "8db65d", "location": "app.py:tracker-beyondhd", "message": "Beyond-HD API key validation", "data": {"status": 200, "url": "https://beyond-hd.me/api/torrents/8e62958f567aa6e08023e28f85457d3a", "redirect": false}, "hypothesisId": "C", "timestamp": 1780917026478}
+{"sessionId": "8db65d", "location": "app.py:tracker-privatehd", "message": "PrivateHD auth response", "data": {"status": 200, "redirect": false}, "hypothesisId": "D", "timestamp": 1780917053589}
+{"sessionId": "8db65d", "location": "app.py:tracker-privatehd", "message": "PrivateHD token validation", "data": {"status": 200, "url": "https://privatehd.to/api/v1/jackett/torrents?limit=1", "redirect": false}, "hypothesisId": "E", "timestamp": 1780917053803}
