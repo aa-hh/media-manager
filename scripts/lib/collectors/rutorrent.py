@@ -31,8 +31,17 @@ def fetch(url: str, username: str, password: str, hashes: list[str]) -> list[dic
     if not hashes:
         return []
 
-    rpc_url = url.rstrip("/") + "/RPC2"
-    auth    = (username, password) if username else None
+    # Support explicit RPC path in URL (e.g. https://host/xmlrpc), or try
+    # /xmlrpc then /RPC2 as fallbacks.
+    base = url.rstrip("/")
+    parsed = urlparse(base)
+    if parsed.path and parsed.path not in ("/", ""):
+        # URL already has a path — use it directly as the RPC endpoint
+        rpc_candidates = [base]
+    else:
+        rpc_candidates = [base + "/xmlrpc", base + "/RPC2"]
+
+    auth = (username, password) if username else None
 
     calls = []
     for h in hashes:
@@ -40,15 +49,33 @@ def fetch(url: str, username: str, password: str, hashes: list[str]) -> list[dic
             calls.append({"methodName": method, "params": [h.upper()]})
 
     body = xmlrpc.client.dumps((calls,), methodname="system.multicall")
+    resp = None
+    last_err = None
+    for rpc_url in rpc_candidates:
+        try:
+            r = requests.post(
+                rpc_url,
+                data=body.encode("utf-8"),
+                headers={"Content-Type": "text/xml"},
+                auth=auth,
+                timeout=60,
+                verify=verify_ssl(),
+            )
+            if r.status_code == 404:
+                last_err = f"404 at {rpc_url}"
+                continue
+            r.raise_for_status()
+            resp = r
+            break
+        except requests.HTTPError as e:
+            last_err = str(e)
+            continue
+        except Exception as e:
+            last_err = str(e)
+            break
     try:
-        resp = requests.post(
-            rpc_url,
-            data=body.encode("utf-8"),
-            headers={"Content-Type": "text/xml"},
-            auth=auth,
-            timeout=60,
-            verify=verify_ssl(),
-        )
+        if resp is None:
+            raise RuntimeError(last_err or "all RPC endpoints failed")
         resp.raise_for_status()
         raw, _  = xmlrpc.client.loads(resp.content)
         results = raw[0]

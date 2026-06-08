@@ -964,18 +964,29 @@ async def setup_test_service(request: Request):
                 return JSONResponse({"ok": True, "version": "API v3"})
             elif service == "rutorrent":
                 import xmlrpc.client
-                rpc_url = url.rstrip("/") + "/RPC2"
-                auth_url = rpc_url
-                if key:  # key = "username:password" format sent from UI
-                    parts = key.split(":", 1)
-                    if len(parts) == 2:
-                        from urllib.parse import quote
-                        proto, rest = rpc_url.split("://", 1)
-                        auth_url = f"{proto}://{quote(parts[0])}:{quote(parts[1])}@{rest}"
-                body = xmlrpc.client.dumps((), methodname="system.listMethods")
-                r = await client.post(auth_url, content=body.encode(), headers={"Content-Type": "text/xml"})
-                r.raise_for_status()
-                return JSONResponse({"ok": True, "version": "rTorrent"})
+                from urllib.parse import urlparse as _urlparse, quote
+                base = url.rstrip("/")
+                parsed_u = _urlparse(base)
+                if parsed_u.path and parsed_u.path not in ("/", ""):
+                    rpc_candidates = [base]
+                else:
+                    rpc_candidates = [base + "/xmlrpc", base + "/RPC2"]
+                xml_body = xmlrpc.client.dumps((), methodname="system.listMethods")
+                last_err = None
+                for rpc_url in rpc_candidates:
+                    auth_url = rpc_url
+                    if key:
+                        parts = key.split(":", 1)
+                        if len(parts) == 2:
+                            proto, rest = rpc_url.split("://", 1)
+                            auth_url = f"{proto}://{quote(parts[0])}:{quote(parts[1])}@{rest}"
+                    r = await client.post(auth_url, content=xml_body.encode(), headers={"Content-Type": "text/xml"})
+                    if r.status_code == 404:
+                        last_err = f"404 at {rpc_url}"
+                        continue
+                    r.raise_for_status()
+                    return JSONResponse({"ok": True, "version": "rTorrent"})
+                return JSONResponse({"ok": False, "error": f"RPC endpoint not found — tried /xmlrpc and /RPC2 ({last_err})"}, status_code=200)
             elif service == "tracker-blutopia":
                 if not key:
                     return JSONResponse({"ok": False, "error": "API key is required"}, status_code=200)
