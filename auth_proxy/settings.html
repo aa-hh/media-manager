@@ -871,7 +871,7 @@ const SVC_DEFS = [
   { id: 'tautulli',          label: 'Tautulli',     desc: 'Enhanced watch stats',          icon: null,                          multi: false, hasUrl: true  },
   { id: 'rutorrent',         label: 'ruTorrent',    desc: 'Torrent seeding client',        icon: null,                          multi: false, hasUrl: true  },
   { id: 'tracker-blutopia',  label: 'Blutopia',     desc: 'Tracker account · UNIT3D',      icon: null,                          multi: false, hasUrl: true  },
-  { id: 'tracker-beyondhd',  label: 'Beyond-HD',    desc: 'Tracker account · UNIT3D',      icon: null,                          multi: false, hasUrl: true  },
+  { id: 'tracker-beyondhd',  label: 'Beyond-HD',    desc: 'Tracker account · BHD API',     icon: null,                          multi: false, hasUrl: true  },
   { id: 'tracker-privatehd', label: 'PrivateHD',    desc: 'Tracker account · AvistaZ',     icon: null,                          multi: false, hasUrl: true  },
 ];
 
@@ -1097,6 +1097,7 @@ function buildFormHTML(def) {
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
         <button class="btn btn--test" onclick="testTrackerAccount('blutopia', 'tracker-blutopia-url', 'tracker-blutopia-username', 'tracker-blutopia-key', 'tracker-blutopia-result')">Test connection</button>
+        <button class="btn btn--primary btn--sm" onclick="saveServices()">Save</button>
         <span class="test-result" id="tracker-blutopia-result"></span>
       </div>`;
   }
@@ -1111,15 +1112,22 @@ function buildFormHTML(def) {
       <div class="svc-form-row">
         <div class="form-group">
           <label class="form-label">API Key</label>
-          <input type="password" class="form-input" id="tracker-beyondhd-key" placeholder="API key" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_API_KEY || '')}">
+          <input type="password" class="form-input" id="tracker-beyondhd-key" placeholder="API key from My Security" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_API_KEY || '')}">
         </div>
         <div class="form-group">
-          <label class="form-label">Username <span style="font-weight:400;color:var(--text-muted)">(for ratio stats)</span></label>
+          <label class="form-label">RSS Key</label>
+          <input type="password" class="form-input" id="tracker-beyondhd-rss-key" placeholder="RSS key from My Security" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_RSS_KEY || '')}">
+        </div>
+      </div>
+      <div class="svc-form-row">
+        <div class="form-group">
+          <label class="form-label">Username <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
           <input type="text" class="form-input" id="tracker-beyondhd-username" placeholder="optional" autocomplete="off" value="${esc(cfg.TRACKER_BEYONDHD_USERNAME || '')}">
         </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
-        <button class="btn btn--test" onclick="testTrackerAccount('beyondhd', 'tracker-beyondhd-url', 'tracker-beyondhd-username', 'tracker-beyondhd-key', 'tracker-beyondhd-result')">Test connection</button>
+        <button class="btn btn--test" onclick="testBeyondHD()">Test connection</button>
+        <button class="btn btn--primary btn--sm" onclick="saveServices()">Save</button>
         <span class="test-result" id="tracker-beyondhd-result"></span>
       </div>`;
   }
@@ -1149,6 +1157,7 @@ function buildFormHTML(def) {
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
         <button class="btn btn--test" onclick="testPrivateHD()">Test connection</button>
+        <button class="btn btn--primary btn--sm" onclick="saveServices()">Save</button>
         <span class="test-result" id="tracker-privatehd-result"></span>
       </div>`;
   }
@@ -1208,6 +1217,34 @@ async function testTrackerAccount(slug, urlId, usernameId, keyId, resultId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ service: `tracker-${slug}`, url, key, username }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      el.className = 'test-result test-result--ok';
+      el.textContent = (data.version || '✓') + ' ✓';
+    } else {
+      el.className = 'test-result test-result--err';
+      el.textContent = data.error || 'Failed';
+    }
+  } catch {
+    el.className = 'test-result test-result--err';
+    el.textContent = 'Request failed';
+  }
+}
+
+async function testBeyondHD() {
+  const url = document.getElementById('tracker-beyondhd-url')?.value.trim() || '';
+  const key = document.getElementById('tracker-beyondhd-key')?.value.trim() || '';
+  const rssKey = document.getElementById('tracker-beyondhd-rss-key')?.value.trim() || '';
+  const el = document.getElementById('tracker-beyondhd-result');
+  if (!el) return;
+  el.className = 'test-result test-result--checking';
+  el.innerHTML = '<span class="spinner"></span>checking…';
+  try {
+    const r = await fetch('/api/setup/test-service', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: 'tracker-beyondhd', url, key, rss_key: rssKey }),
     });
     const data = await r.json();
     if (data.ok) {
@@ -1405,6 +1442,8 @@ async function saveServices() {
     TRACKER_BEYONDHD_URL:       document.getElementById('tracker-beyondhd-url')?.value.trim() || '',
     TRACKER_BEYONDHD_USERNAME:  document.getElementById('tracker-beyondhd-username')?.value.trim() || '',
     TRACKER_BEYONDHD_API_KEY:   document.getElementById('tracker-beyondhd-key')?.value.trim() || '',
+    TRACKER_BEYONDHD_RSS_KEY:   document.getElementById('tracker-beyondhd-rss-key')?.value.trim() || '',
+    TRACKER_BEYONDHD_RSS_KEY:   document.getElementById('tracker-beyondhd-rss-key')?.value.trim() || '',
     TRACKER_PRIVATEHD_URL:      document.getElementById('tracker-privatehd-url')?.value.trim() || '',
     TRACKER_PRIVATEHD_USERNAME: document.getElementById('tracker-privatehd-username')?.value.trim() || '',
     TRACKER_PRIVATEHD_PASSWORD: document.getElementById('tracker-privatehd-password')?.value.trim() || '',

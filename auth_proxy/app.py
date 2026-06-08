@@ -30,6 +30,35 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/app/project"))
 CONFIG_ENV_PATH = CONFIG_DIR / ".env"
 PLAYS_DB = DATA_DIR / "webhook_plays.db"
+_DEBUG_LOG_PATH = PROJECT_DIR / ".cursor" / "debug-8db65d.log"
+
+
+def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    # region agent log
+    try:
+        import time
+        payload = {
+            "sessionId": "8db65d",
+            "location": location,
+            "message": message,
+            "data": data,
+            "hypothesisId": hypothesis_id,
+            "timestamp": int(time.time() * 1000),
+        }
+        _DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_DEBUG_LOG_PATH, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+    # endregion
+
+
+def _is_auth_redirect(resp: httpx.Response) -> bool:
+    return resp.status_code in (301, 302, 303, 307, 308)
+
+
+def _unit3d_bearer_headers(api_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
 
 PIPELINE_JOBS = [
     {"id": "sonarr",    "name": "Sonarr",             "description": "Fetch TV library from Sonarr"},
@@ -947,41 +976,88 @@ async def setup_test_service(request: Request):
                 r = await client.post(auth_url, content=body.encode(), headers={"Content-Type": "text/xml"})
                 r.raise_for_status()
                 return JSONResponse({"ok": True, "version": "rTorrent"})
-            elif service in ("tracker-blutopia", "tracker-beyondhd"):
-                username = body.get("username", "").strip()
-                if username:
-                    r = await client.get(
-                        f"{url.rstrip('/')}/api/user/{username}",
-                        params={"api_token": key},
+            elif service == "tracker-blutopia":
+                if not key:
+                    return JSONResponse({"ok": False, "error": "API key is required"}, status_code=200)
+                base = url.rstrip("/")
+                headers = _unit3d_bearer_headers(key)
+                async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
+                    r = await no_redir.get(
+                        f"{base}/api/torrents/filter",
+                        params={"perPage": 1},
+                        headers=headers,
                     )
-                    if r.status_code == 401:
-                        return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
-                    if r.status_code == 403:
-                        return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
-                    if r.status_code == 404:
-                        return JSONResponse({"ok": False, "error": "User not found (404) — username may be case-sensitive, check your profile URL"}, status_code=200)
-                    if not r.is_success:
-                        return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
-                    try:
-                        data = r.json().get("data", {})
-                    except Exception:
-                        return JSONResponse({"ok": False, "error": "Unexpected response from tracker — check the URL"}, status_code=200)
-                    up = data.get("uploaded") or 0
-                    dn = data.get("downloaded") or 1
-                    ratio = round(up / dn, 3) if dn else None
-                    return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
-                # No username — just confirm the API key works via the torrents list
-                r = await client.get(
-                    f"{url.rstrip('/')}/api/torrents",
-                    params={"api_token": key, "perPage": 1},
+                # region agent log
+                _agent_debug_log(
+                    "app.py:tracker-blutopia",
+                    "Blutopia API key validation",
+                    {"status": r.status_code, "url": f"{base}/api/torrents/filter", "redirect": _is_auth_redirect(r)},
+                    "A",
                 )
+                # endregion
+                if _is_auth_redirect(r):
+                    return JSONResponse({"ok": False, "error": "Invalid API key — redirected to login"}, status_code=200)
                 if r.status_code == 401:
                     return JSONResponse({"ok": False, "error": "Invalid API key"}, status_code=200)
                 if r.status_code == 403:
                     return JSONResponse({"ok": False, "error": "Forbidden (403) — check API key permissions"}, status_code=200)
                 if not r.is_success:
-                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} — check URL and API key"}, status_code=200)
-                return JSONResponse({"ok": True, "version": "API key valid (add username for ratio stats)"})
+                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
+                ratio_label = None
+                async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
+                    me_r = await no_redir.get(f"{base}/api/user", headers=headers)
+                # region agent log
+                _agent_debug_log(
+                    "app.py:tracker-blutopia",
+                    "Blutopia account info",
+                    {"status": me_r.status_code, "url": f"{base}/api/user"},
+                    "B",
+                )
+                # endregion
+                if me_r.is_success:
+                    try:
+                        me_data = me_r.json()
+                        ratio_raw = me_data.get("ratio")
+                        if ratio_raw is not None:
+                            ratio_label = f"ratio {float(ratio_raw):.3f}"
+                    except (ValueError, TypeError):
+                        pass
+                return JSONResponse({"ok": True, "version": ratio_label or "Connected"})
+            elif service == "tracker-beyondhd":
+                if not key:
+                    return JSONResponse({"ok": False, "error": "API key is required"}, status_code=200)
+                rss_key = body.get("rss_key", "").strip()
+                if not rss_key:
+                    return JSONResponse({"ok": False, "error": "RSS key is required (My Security → RSS Key)"}, status_code=200)
+                base = url.rstrip("/")
+                bhd_body: dict = {"action": "search", "rsskey": rss_key}
+                bhd_url = f"{base}/api/torrents/{key}"
+                async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
+                    r = await no_redir.post(
+                        bhd_url,
+                        json=bhd_body,
+                        headers={"Accept": "application/json", "Content-Type": "application/json"},
+                    )
+                # region agent log
+                _agent_debug_log(
+                    "app.py:tracker-beyondhd",
+                    "Beyond-HD API key validation",
+                    {"status": r.status_code, "url": bhd_url, "redirect": _is_auth_redirect(r)},
+                    "C",
+                )
+                # endregion
+                if _is_auth_redirect(r):
+                    return JSONResponse({"ok": False, "error": "Invalid API key — redirected to login"}, status_code=200)
+                if not r.is_success:
+                    return JSONResponse({"ok": False, "error": f"HTTP {r.status_code} from tracker"}, status_code=200)
+                try:
+                    payload = r.json()
+                except Exception:
+                    return JSONResponse({"ok": False, "error": "Unexpected response from tracker — check the URL"}, status_code=200)
+                if payload.get("success") is False or payload.get("status_code") == 0:
+                    msg = payload.get("status_message") or payload.get("message") or "Invalid API key"
+                    return JSONResponse({"ok": False, "error": msg}, status_code=200)
+                return JSONResponse({"ok": True, "version": "API key valid"})
             elif service == "tracker-privatehd":
                 # AvistaZ auth: POST credentials → bearer token → GET /api/v1/users/me
                 username = body.get("username", "").strip()
@@ -989,32 +1065,68 @@ async def setup_test_service(request: Request):
                 pid = body.get("pid", "").strip()
                 if not username or not password or not pid:
                     return JSONResponse({"ok": False, "error": "Username, password, and PID are all required"}, status_code=200)
-                # Use a separate client with redirects disabled so a login-page
-                # redirect is caught as auth failure rather than followed.
+                if len(pid) != 32:
+                    return JSONResponse({"ok": False, "error": "PID must be exactly 32 characters (from Settings → Passkey on PrivateHD)"}, status_code=200)
+                base = url.rstrip("/")
                 async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
                     auth_r = await no_redir.post(
-                        f"{url.rstrip('/')}/api/v1/jackett/auth",
+                        f"{base}/api/v1/jackett/auth",
                         data={"username": username, "password": password, "pid": pid},
+                        headers={"Accept": "application/json"},
                     )
-                if auth_r.status_code in (301, 302, 303, 307, 308):
+                # region agent log
+                _agent_debug_log(
+                    "app.py:tracker-privatehd",
+                    "PrivateHD auth response",
+                    {"status": auth_r.status_code, "redirect": _is_auth_redirect(auth_r)},
+                    "D",
+                )
+                # endregion
+                if _is_auth_redirect(auth_r):
                     return JSONResponse({"ok": False, "error": "Authentication failed — credentials rejected (redirected to login). Check username, password, and PID."}, status_code=200)
                 if auth_r.status_code in (401, 403):
-                    return JSONResponse({"ok": False, "error": "Authentication failed — check username, password, and PID"}, status_code=200)
+                    try:
+                        err_body = auth_r.json()
+                        msg = err_body.get("message") or err_body.get("error")
+                    except Exception:
+                        msg = None
+                    return JSONResponse({"ok": False, "error": msg or "Authentication failed — check username, password, and PID"}, status_code=200)
                 if not auth_r.is_success:
                     return JSONResponse({"ok": False, "error": f"Auth endpoint returned HTTP {auth_r.status_code}"}, status_code=200)
-                token = auth_r.json().get("token")
+                try:
+                    auth_data = auth_r.json()
+                except Exception:
+                    return JSONResponse({"ok": False, "error": "Unexpected response from auth endpoint"}, status_code=200)
+                token = auth_data.get("token")
                 if not token:
                     return JSONResponse({"ok": False, "error": "No token returned from auth endpoint"}, status_code=200)
-                me_r = await client.get(
-                    f"{url.rstrip('/')}/api/v1/users/me",
-                    params={"api_token": token},
+                bearer = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+                async with httpx.AsyncClient(verify=False, timeout=15, follow_redirects=False) as no_redir:
+                    me_r = await no_redir.get(
+                        f"{base}/api/v1/jackett/torrents",
+                        headers=bearer,
+                        params={"limit": 1},
+                    )
+                # region agent log
+                _agent_debug_log(
+                    "app.py:tracker-privatehd",
+                    "PrivateHD token validation",
+                    {"status": me_r.status_code, "url": str(me_r.request.url), "redirect": _is_auth_redirect(me_r)},
+                    "E",
                 )
-                me_r.raise_for_status()
-                data = me_r.json().get("data", {})
-                up = data.get("uploaded") or 0
-                dn = data.get("downloaded") or 1
-                ratio = round(up / dn, 3) if dn else None
-                return JSONResponse({"ok": True, "version": f"ratio {ratio}" if ratio is not None else "Connected"})
+                # endregion
+                if _is_auth_redirect(me_r):
+                    return JSONResponse({"ok": False, "error": "Token rejected — check account rank (Member+ required for API)"}, status_code=200)
+                if me_r.status_code in (401, 403):
+                    try:
+                        err_body = me_r.json()
+                        msg = err_body.get("message") or err_body.get("error")
+                    except Exception:
+                        msg = None
+                    return JSONResponse({"ok": False, "error": msg or "Token rejected — check account rank (Member+ required for API)"}, status_code=200)
+                if not me_r.is_success:
+                    return JSONResponse({"ok": False, "error": f"API returned HTTP {me_r.status_code}"}, status_code=200)
+                return JSONResponse({"ok": True, "version": "Connected"})
             else:
                 return JSONResponse({"ok": False, "error": "Unknown service"}, status_code=400)
     except httpx.ConnectError as e:
@@ -1138,6 +1250,7 @@ async def settings_get_services():
         "TRACKER_BEYONDHD_URL":      cfg.get("TRACKER_BEYONDHD_URL", ""),
         "TRACKER_BEYONDHD_USERNAME": cfg.get("TRACKER_BEYONDHD_USERNAME", ""),
         "TRACKER_BEYONDHD_API_KEY":  cfg.get("TRACKER_BEYONDHD_API_KEY", ""),
+        "TRACKER_BEYONDHD_RSS_KEY":  cfg.get("TRACKER_BEYONDHD_RSS_KEY", ""),
         "TRACKER_PRIVATEHD_URL":      cfg.get("TRACKER_PRIVATEHD_URL", ""),
         "TRACKER_PRIVATEHD_USERNAME": cfg.get("TRACKER_PRIVATEHD_USERNAME", ""),
         "TRACKER_PRIVATEHD_PASSWORD": cfg.get("TRACKER_PRIVATEHD_PASSWORD", ""),
@@ -1244,7 +1357,7 @@ async def settings_save_config(request: Request):
         "PLEX_TV_SECTIONS", "PLEX_MOVIE_SECTIONS", "STORAGE_CAPACITY_GB", "VERIFY_SSL",
         "RUTORRENT_URL", "RUTORRENT_USERNAME", "RUTORRENT_PASSWORD",
         "TRACKER_BLUTOPIA_URL", "TRACKER_BLUTOPIA_USERNAME", "TRACKER_BLUTOPIA_API_KEY",
-        "TRACKER_BEYONDHD_URL", "TRACKER_BEYONDHD_USERNAME", "TRACKER_BEYONDHD_API_KEY",
+        "TRACKER_BEYONDHD_URL", "TRACKER_BEYONDHD_USERNAME", "TRACKER_BEYONDHD_API_KEY", "TRACKER_BEYONDHD_RSS_KEY",
         "TRACKER_PRIVATEHD_URL", "TRACKER_PRIVATEHD_USERNAME",
         "TRACKER_PRIVATEHD_PASSWORD", "TRACKER_PRIVATEHD_PID",
     }
