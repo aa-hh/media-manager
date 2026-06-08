@@ -92,15 +92,13 @@ def fetch(url: str, username: str, password: str, hashes: list[str]) -> list[dic
             break
         try:
             vals: dict = {}
-            ok = True
             for j, field in enumerate(_FIELDS):
                 r = results[base + j]
                 if isinstance(r, dict) and "faultCode" in r:
-                    ok = False
-                    break
-                vals[field] = r[0] if isinstance(r, list) and r else None
-            if not ok:
-                continue
+                    # Treat unsupported fields as None rather than skipping the torrent
+                    vals[field] = None
+                else:
+                    vals[field] = r[0] if isinstance(r, list) and r else None
 
             state      = int(vals.get("d.state") or 0)
             active     = int(vals.get("d.is_active") or 0)
