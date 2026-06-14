@@ -92,7 +92,10 @@ server_machine_id: str | None = None
 
 def _schedule_pipeline(cron_expr: str) -> None:
     """Replace the scheduled pipeline job with a new cron expression."""
-    _scheduler.remove_all_jobs()
+    # Remove only the pipeline job, not all jobs (would also remove pending_deletions)
+    existing = _scheduler.get_job("pipeline")
+    if existing:
+        existing.remove()
     try:
         trigger = CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
         _scheduler.add_job(_run_pipeline_scheduled, trigger, id="pipeline", replace_existing=True)
@@ -270,7 +273,7 @@ async def _sonarr_delete_season(sonarr_id: int, season_number: int) -> bool:
                     continue
                 file_ids = [f["id"] for f in resp.json() if f.get("seasonNumber") == season_number]
                 if not file_ids:
-                    continue
+                    return True  # no files to delete — season is already empty, treat as success
                 del_resp = await client.delete(
                     f"{url.rstrip('/')}/api/v3/episodefile/bulk",
                     json={"episodeFileIds": file_ids},
@@ -294,21 +297,27 @@ async def _delete_via_arr(item: dict, season_number: int | None) -> bool:
 async def _plex_set_label(rating_key: str | None, label: str, add: bool) -> None:
     """Add or remove a Plex label on an item via the metadata edit-fields API.
 
-    NOTE: untested against a live server — Plex's batch tag-edit query parameter
-    format (label[].tag.tag / label[].tag.tag.tag-) has shifted across versions.
-    Verify this against your server and adjust if the label doesn't apply/clear.
+    Plex expects literal bracket characters in the query-string key names
+    (e.g. label[0].tag.tag).  httpx percent-encodes brackets when they appear
+    in the `params` dict, which causes Plex to silently ignore the parameter.
+    We therefore build the query string manually and append it to the URL so
+    that brackets are transmitted literally.
     """
     if not (PLEX_SERVER_URL and PLEX_TOKEN and rating_key):
         return
     try:
-        params = {"X-Plex-Token": PLEX_TOKEN}
+        from urllib.parse import quote
+        encoded_label = quote(label, safe="")
+        encoded_token = quote(PLEX_TOKEN, safe="")
         if add:
-            params["label[0].tag.tag"] = label
-            params["label.locked"] = "1"
+            qs = f"X-Plex-Token={encoded_token}&label[0].tag.tag={encoded_label}&label.locked=1"
         else:
-            params["label[0].tag.tag-"] = label
+            qs = f"X-Plex-Token={encoded_token}&label[0].tag.tag-={encoded_label}"
+        url = f"{PLEX_SERVER_URL}/library/metadata/{rating_key}?{qs}"
         async with httpx.AsyncClient(verify=False, timeout=15) as client:
-            await client.put(f"{PLEX_SERVER_URL}/library/metadata/{rating_key}", params=params)
+            resp = await client.put(url)
+        if resp.status_code not in (200, 201, 204):
+            print(f"Warning: Plex label {'add' if add else 'remove'} on {rating_key} returned HTTP {resp.status_code}")
     except Exception as e:
         print(f"Warning: could not {'add' if add else 'remove'} Plex label on {rating_key}: {e}")
 
